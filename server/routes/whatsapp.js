@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const { getDatabase } = require('../database/init');
 const { authenticateToken } = require('./auth');
+const conversationManager = require('../utils/conversationManager');
 
 const router = express.Router();
 
@@ -102,13 +103,40 @@ async function processIncomingMessage(message) {
   
   console.log(`Mensaje recibido de ${phoneNumber}: ${messageText}`);
   
-  // Aquí puedes implementar lógica para responder automáticamente
-  // Por ejemplo, comandos como "TURNOS", "CANCELAR", etc.
+  const text = messageText.toLowerCase().trim();
   
-  if (messageText.toLowerCase().includes('turnos')) {
+  // Verificar si hay una conversación activa
+  const conversationState = conversationManager.getConversationState(phoneNumber);
+  
+  if (conversationState && !conversationManager.isConversationExpired(phoneNumber)) {
+    // Procesar respuesta en conversación activa
+    const response = await conversationManager.processUserResponse(phoneNumber, messageText);
+    
+    if (response.action === 'send_message') {
+      await sendWhatsAppMessage(phoneNumber, response.message);
+    } else if (response.action === 'restart') {
+      await sendWhatsAppMessage(phoneNumber, response.message);
+    }
+    return;
+  }
+  
+  // Comandos del bot (solo si no hay conversación activa)
+  if (text.includes('turnos') || text === 'turnos') {
     await sendAvailableSlots(phoneNumber);
-  } else if (messageText.toLowerCase().includes('cancelar')) {
+  } else if (text.includes('cancelar') || text === 'cancelar') {
     await sendCancellationInstructions(phoneNumber);
+  } else if (text.includes('mi turno') || text === 'mi turno') {
+    await sendMyAppointment(phoneNumber);
+  } else if (text.includes('horarios') || text === 'horarios') {
+    await sendBusinessHours(phoneNumber);
+  } else if (text.includes('reservar') || text === 'reservar') {
+    // Iniciar proceso de reserva directa
+    conversationManager.startReservation(phoneNumber);
+    await sendReservationStart(phoneNumber);
+  } else if (text.includes('precios') || text === 'precios') {
+    await sendPrices(phoneNumber);
+  } else if (text.includes('ayuda') || text === 'ayuda' || text === '?') {
+    await sendHelpMessage(phoneNumber);
   } else {
     await sendWelcomeMessage(phoneNumber);
   }
@@ -221,22 +249,55 @@ Si necesitas cancelar o reprogramar, contáctanos lo antes posible.`;
 
 // Función para enviar slots disponibles
 async function sendAvailableSlots(phoneNumber) {
-  const message = `📅 *Turnos Disponibles*
+  try {
+    // Obtener servicios disponibles
+    const db = getDatabase();
+    const services = await new Promise((resolve, reject) => {
+      db.all('SELECT * FROM services WHERE is_active = 1 ORDER BY name', (err, services) => {
+        if (err) reject(err);
+        else resolve(services);
+      });
+    });
 
-Para ver los turnos disponibles y reservar, visita nuestro sitio web o contáctanos directamente.
+    // Obtener configuración del negocio
+    const config = await new Promise((resolve, reject) => {
+      db.get('SELECT * FROM business_config LIMIT 1', (err, config) => {
+        if (err) reject(err);
+        else resolve(config);
+      });
+    });
 
-🌐 *Sitio web:* [Tu sitio web aquí]
-📞 *Teléfono:* ${process.env.BUSINESS_PHONE || 'Teléfono del negocio'}
+    let servicesList = '';
+    services.forEach(service => {
+      servicesList += `• ${service.name} - $${service.price} (${service.duration} min)\n`;
+    });
+
+    const message = `📅 *Turnos Disponibles*
 
 *Servicios disponibles:*
-• Corte de cabello
-• Barba
-• Corte + Barba
-• Lavado de cabello
+${servicesList}
+
+*Horarios de atención:*
+🕐 ${config?.open_time || '09:00'} - ${config?.close_time || '18:00'}
+📅 Lunes a Viernes
+
+*Para reservar:*
+1️⃣ Escribe "RESERVAR" para reservar desde WhatsApp
+2️⃣ Visita: http://localhost:3000
+3️⃣ Llámanos: ${process.env.BUSINESS_PHONE || 'Teléfono del negocio'}
+
+*Otros comandos:*
+• "MI TURNO" - Ver tu turno actual
+• "CANCELAR" - Cancelar turno
+• "HORARIOS" - Ver horarios disponibles
 
 ¡Estamos aquí para ayudarte! 😊`;
-  
-  await sendWhatsAppMessage(phoneNumber, message);
+    
+    await sendWhatsAppMessage(phoneNumber, message);
+  } catch (error) {
+    console.error('Error al obtener servicios:', error);
+    await sendWhatsAppMessage(phoneNumber, '❌ Error al obtener información. Por favor, contáctanos directamente.');
+  }
 }
 
 // Función para enviar instrucciones de cancelación
@@ -263,17 +324,219 @@ async function sendWelcomeMessage(phoneNumber) {
 
 ¡Bienvenido a ${process.env.BUSINESS_NAME || 'nuestro negocio'}!
 
-Para reservar un turno, puedes:
-• Visitar nuestro sitio web
-• Llamarnos directamente
-• Escribir "TURNOS" para más información
+*Comandos disponibles:*
+• "TURNOS" - Ver servicios y horarios
+• "RESERVAR" - Instrucciones para reservar
+• "MI TURNO" - Ver tu turno actual
+• "PRECIOS" - Ver lista de precios
+• "HORARIOS" - Horarios de atención
+• "AYUDA" - Ver todos los comandos
 
 📞 *Teléfono:* ${process.env.BUSINESS_PHONE || 'Teléfono del negocio'}
-🌐 *Sitio web:* [Tu sitio web aquí]
+🌐 *Sitio web:* http://localhost:3000
 📍 *Dirección:* ${process.env.BUSINESS_ADDRESS || 'Dirección del negocio'}
 
 ¡Estamos aquí para ayudarte! 😊`;
   
+  await sendWhatsAppMessage(phoneNumber, message);
+}
+
+// Función para enviar información de mi turno
+async function sendMyAppointment(phoneNumber) {
+  try {
+    const db = getDatabase();
+    
+    // Normalizar el número de teléfono para buscar en ambos formatos
+    const normalizedPhone = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
+    const phoneWithoutPlus = phoneNumber.startsWith('+') ? phoneNumber.substring(1) : phoneNumber;
+    
+    const appointments = await new Promise((resolve, reject) => {
+      db.all(`
+        SELECT a.*, s.name as service_name, s.price 
+        FROM appointments a 
+        JOIN services s ON a.service_id = s.id 
+        JOIN clients c ON a.client_id = c.id 
+        WHERE (c.phone = ? OR c.phone = ?) AND a.status IN ('pending', 'confirmed')
+        ORDER BY a.appointment_date, a.appointment_time
+      `, [normalizedPhone, phoneWithoutPlus], (err, appointments) => {
+        if (err) reject(err);
+        else resolve(appointments);
+      });
+    });
+
+    if (appointments.length === 0) {
+      await sendWhatsAppMessage(phoneNumber, `❌ *No tienes turnos activos*
+
+No encontramos turnos pendientes o confirmados para tu número.
+
+Para reservar un turno:
+• Escribe "TURNOS" para ver servicios
+• Escribe "RESERVAR" para instrucciones
+• Visita: http://localhost:3000`);
+    } else {
+      let message = `📅 *Tus Turnos Activos*\n\n`;
+      appointments.forEach((apt, index) => {
+        const date = new Date(apt.appointment_date).toLocaleDateString('es-ES');
+        message += `${index + 1}. *${apt.service_name}*\n`;
+        message += `📅 ${date} a las ${apt.appointment_time}\n`;
+        message += `💰 $${apt.price}\n`;
+        message += `📊 Estado: ${apt.status === 'pending' ? 'Pendiente' : 'Confirmado'}\n\n`;
+      });
+      message += `Para cancelar, escribe "CANCELAR"`;
+      
+      await sendWhatsAppMessage(phoneNumber, message);
+    }
+  } catch (error) {
+    console.error('Error al obtener turnos:', error);
+    await sendWhatsAppMessage(phoneNumber, '❌ Error al obtener tus turnos. Por favor, contáctanos directamente.');
+  }
+}
+
+// Función para enviar horarios de atención
+async function sendBusinessHours(phoneNumber) {
+  try {
+    const db = getDatabase();
+    const config = await new Promise((resolve, reject) => {
+      db.get('SELECT * FROM business_config LIMIT 1', (err, config) => {
+        if (err) reject(err);
+        else resolve(config);
+      });
+    });
+
+    const message = `🕐 *Horarios de Atención*
+
+*Días laborables:*
+📅 Lunes a Viernes
+⏰ ${config?.open_time || '09:00'} - ${config?.close_time || '18:00'}
+
+*Duración de turnos:*
+⏱️ ${config?.slot_duration || 30} minutos
+
+*Para reservar:*
+• Escribe "TURNOS" para ver servicios
+• Escribe "RESERVAR" para instrucciones
+• Visita: http://localhost:3000
+
+📞 *Teléfono:* ${process.env.BUSINESS_PHONE || 'Teléfono del negocio'}`;
+
+    await sendWhatsAppMessage(phoneNumber, message);
+  } catch (error) {
+    console.error('Error al obtener horarios:', error);
+    await sendWhatsAppMessage(phoneNumber, '❌ Error al obtener horarios. Por favor, contáctanos directamente.');
+  }
+}
+
+// Función para enviar instrucciones de reserva
+async function sendReservationInstructions(phoneNumber) {
+  const message = `📝 *Cómo Reservar tu Turno*
+
+*Opción 1: Sitio Web (Recomendado)*
+🌐 Visita: http://localhost:3000
+✅ Selecciona servicio, fecha y hora
+✅ Completa tus datos
+✅ Confirma tu reserva
+
+*Opción 2: Por Teléfono*
+📞 Llámanos: ${process.env.BUSINESS_PHONE || 'Teléfono del negocio'}
+✅ Te ayudamos a reservar
+
+*Opción 3: WhatsApp Directo*
+✅ Escribe "RESERVAR" para reservar desde WhatsApp
+✅ Te guiaremos paso a paso
+
+*Información necesaria:*
+• Nombre completo
+• Número de teléfono
+• Servicio deseado
+• Fecha y hora preferida
+
+¡Estamos aquí para ayudarte! 😊`;
+
+  await sendWhatsAppMessage(phoneNumber, message);
+}
+
+// Función para iniciar proceso de reserva directa
+async function sendReservationStart(phoneNumber) {
+  try {
+    const db = getDatabase();
+    const services = await new Promise((resolve, reject) => {
+      db.all('SELECT * FROM services WHERE is_active = 1 ORDER BY name', (err, services) => {
+        if (err) reject(err);
+        else resolve(services);
+      });
+    });
+
+    let serviceList = '🎯 *¡Vamos a reservar tu turno!*\n\n*Servicios disponibles:*\n\n';
+    services.forEach((service, index) => {
+      serviceList += `${index + 1}. ${service.name} - $${service.price} (${service.duration} min)\n`;
+    });
+    serviceList += '\n*Escribe el número del servicio que deseas:*\n\n*Ejemplo:* 1, 2, 3...';
+
+    await sendWhatsAppMessage(phoneNumber, serviceList);
+  } catch (error) {
+    console.error('Error al iniciar reserva:', error);
+    await sendWhatsAppMessage(phoneNumber, '❌ Error al iniciar la reserva. Por favor, contáctanos directamente.');
+  }
+}
+
+// Función para enviar precios
+async function sendPrices(phoneNumber) {
+  try {
+    const db = getDatabase();
+    const services = await new Promise((resolve, reject) => {
+      db.all('SELECT * FROM services WHERE is_active = 1 ORDER BY price', (err, services) => {
+        if (err) reject(err);
+        else resolve(services);
+      });
+    });
+
+    let message = `💰 *Lista de Precios*\n\n`;
+    services.forEach(service => {
+      message += `*${service.name}*\n`;
+      message += `💵 $${service.price}\n`;
+      message += `⏱️ ${service.duration} minutos\n`;
+      if (service.description) {
+        message += `📝 ${service.description}\n`;
+      }
+      message += `\n`;
+    });
+
+    message += `*Para reservar:*
+• Escribe "TURNOS" para ver disponibilidad
+• Escribe "RESERVAR" para instrucciones
+• Visita: http://localhost:3000`;
+
+    await sendWhatsAppMessage(phoneNumber, message);
+  } catch (error) {
+    console.error('Error al obtener precios:', error);
+    await sendWhatsAppMessage(phoneNumber, '❌ Error al obtener precios. Por favor, contáctanos directamente.');
+  }
+}
+
+// Función para enviar mensaje de ayuda
+async function sendHelpMessage(phoneNumber) {
+  const message = `❓ *Comandos Disponibles*
+
+*Información:*
+• "TURNOS" - Ver servicios y horarios
+• "PRECIOS" - Ver lista de precios
+• "HORARIOS" - Horarios de atención
+
+*Gestión de Turnos:*
+• "MI TURNO" - Ver tu turno actual
+• "RESERVAR" - Reservar turno desde WhatsApp
+• "CANCELAR" - Cancelar turno
+
+*Nuevo: Reserva Directa por WhatsApp*
+🎯 Escribe "RESERVAR" y te guiaremos paso a paso para reservar tu turno directamente desde WhatsApp.
+
+*Contacto:*
+📞 *Teléfono:* ${process.env.BUSINESS_PHONE || 'Teléfono del negocio'}
+🌐 *Sitio web:* http://localhost:3000
+📍 *Dirección:* ${process.env.BUSINESS_ADDRESS || 'Dirección del negocio'}
+
+¡Estamos aquí para ayudarte! 😊`;
+
   await sendWhatsAppMessage(phoneNumber, message);
 }
 
