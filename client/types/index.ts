@@ -20,6 +20,7 @@ export interface Client {
   updated_at: string
 }
 
+
 export interface Appointment {
   id: number
   client_id: number
@@ -38,7 +39,7 @@ export interface Appointment {
   service_duration?: number
   service_price?: number
 }
-
+//t22222222222222
 export interface BusinessConfig {
   id: number
   business_name: string

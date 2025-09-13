@@ -364,37 +364,41 @@ class ConversationManager {
   generateAvailableSlots(openTime, closeTime, slotDuration, serviceDuration, occupiedSlots) {
     const slots = [];
     const moment = require('moment');
-    
+
     const open = moment(openTime, 'HH:mm');
     const close = moment(closeTime, 'HH:mm');
-    
+
     // Convertir slots ocupados a momentos
     const occupied = occupiedSlots.map(slot => ({
       start: moment(slot.appointment_time, 'HH:mm'),
       end: moment(slot.appointment_time, 'HH:mm').add(slot.duration, 'minutes')
     }));
-    
+
     let current = open.clone();
-    
-    while (current.add(serviceDuration, 'minutes').isSameOrBefore(close)) {
-      const slotStart = current.clone().subtract(serviceDuration, 'minutes');
-      const slotEnd = current.clone();
-      
+    while (current.isBefore(close)) {
+      const slotStart = current.clone();
+      const slotEnd = current.clone().add(serviceDuration, 'minutes');
+
+      // El slot debe terminar antes o justo al cierre
+      if (slotEnd.isAfter(close)) {
+        break;
+      }
+
       // Verificar si el slot está ocupado
-      const isOccupied = occupied.some(occ => 
+      const isOccupied = occupied.some(occ =>
         slotStart.isBefore(occ.end) && slotEnd.isAfter(occ.start)
       );
-      
+
       if (!isOccupied) {
         slots.push({
           time: slotStart.format('HH:mm'),
           available: true
         });
       }
-      
+
       current.add(slotDuration, 'minutes');
     }
-    
+
     return slots;
   }
 

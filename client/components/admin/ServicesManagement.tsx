@@ -92,27 +92,61 @@ export default function ServicesManagement() {
     setShowForm(true)
   }
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('¿Estás seguro de que quieres eliminar este servicio?')) {
-      return
-    }
-    
-    try {
-      const token = localStorage.getItem('admin_token')
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/services/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-      
-      if (response.ok) {
-        await fetchServices()
-      }
-    } catch (error) {
-      console.error('Error al eliminar servicio:', error)
-    }
+// 1. Lógica para desactivar el servicio (Soft Delete)
+const handleDeactivate = async (id: number) => {
+  if (!confirm('¿Estás seguro de que quieres desactivar este servicio? No se mostrará a los clientes, pero se mantendrá en el sistema.')) {
+    return;
   }
+
+  try {
+    const token = localStorage.getItem('admin_token');
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/services/${id}/deactivate`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (response.ok) {
+      await fetchServices(); // Recarga la lista de servicios
+      alert('Servicio desactivado exitosamente.');
+    } else {
+      const errorData = await response.json();
+      alert(`Error: ${errorData.error}`);
+    }
+  } catch (error) {
+    console.error('Error al desactivar servicio:', error);
+    alert('Ocurrió un error al desactivar el servicio.');
+  }
+};
+
+// 2. Lógica para eliminar el servicio permanentemente (Hard Delete)
+const handleDestroy = async (id: number) => {
+  if (!confirm('ADVERTENCIA: ¿Estás seguro de que quieres ELIMINAR PERMANENTEMENTE este servicio? Esta acción no se puede deshacer y borrará todo su historial.')) {
+    return;
+  }
+
+  try {
+    const token = localStorage.getItem('admin_token');
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/services/${id}/destroy`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (response.ok) {
+      await fetchServices(); // Recarga la lista de servicios
+      alert('Servicio eliminado permanentemente.');
+    } else {
+      const errorData = await response.json();
+      alert(`Error: ${errorData.error}`);
+    }
+  } catch (error) {
+    console.error('Error al eliminar servicio permanentemente:', error);
+    alert('Ocurrió un error al eliminar el servicio.');
+  }
+};
 
   const toggleServiceStatus = async (service: Service) => {
     try {
@@ -323,7 +357,7 @@ export default function ServicesManagement() {
                   </button>
                   
                   <button
-                    onClick={() => handleDelete(service.id)}
+                    onClick={() => handleDestroy(service.id)}
                     className="text-gray-400 hover:text-red-600"
                   >
                     <Trash2 className="h-4 w-4" />
