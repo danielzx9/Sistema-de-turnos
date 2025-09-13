@@ -105,42 +105,68 @@ router.put('/:id', [
   );
 });
 
-// Eliminar servicio (soft delete)
-router.delete('/:id', authenticateToken, (req, res) => {
+// 1. Ruta para el SOFT DELETE (mantienes esta, ideal para el dinamismo)
+router.delete('/:id/desactivate', authenticateToken, (req, res) => {
   const { id } = req.params;
   const db = getDatabase();
-  
-  // Verificar si hay turnos pendientes para este servicio
+
+  // Verifica turnos pendientes
   db.get(
     'SELECT COUNT(*) as count FROM appointments WHERE service_id = ? AND status IN ("pending", "confirmed")',
     [id],
     (err, result) => {
-      if (err) {
-        return res.status(500).json({ error: 'Error al verificar turnos' });
-      }
-      
+      if (err) return res.status(500).json({ error: 'Error al verificar turnos' });
+
       if (result.count > 0) {
-        return res.status(400).json({ 
-          error: 'No se puede eliminar el servicio porque tiene turnos pendientes' 
+        return res.status(400).json({
+          error: 'No se puede desactivar el servicio porque tiene turnos pendientes.'
         });
       }
-      
-      // Desactivar servicio en lugar de eliminarlo
+
+      // Desactiva el servicio
       db.run(
         'UPDATE services SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [id],
         function(err) {
-          if (err) {
-            return res.status(500).json({ error: 'Error al eliminar servicio' });
-          }
-          
-          if (this.changes === 0) {
-            return res.status(404).json({ error: 'Servicio no encontrado' });
-          }
-          
-          res.json({ message: 'Servicio eliminado exitosamente' });
+          if (err) return res.status(500).json({ error: 'Error al desactivar servicio.' });
+          if (this.changes === 0) return res.status(404).json({ error: 'Servicio no encontrado.' });
+          res.json({ message: 'Servicio desactivado exitosamente.' });
         }
       );
+    }
+  );
+});
+
+// 2. Ruta para el HARD DELETE (nueva ruta para eliminarlo permanentemente)
+router.delete('/:id/destroy', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const db = getDatabase();
+
+  // Esta lógica es crucial: asegúrate de que no haya referencias
+  db.get(
+    'SELECT COUNT(*) as count FROM appointments WHERE service_id = ?',
+    [id],
+    (err, result) => {
+      if (err) return res.status(500).json({ error: 'Error al verificar referencias.' });
+
+      // Si encuentra algún turno (pendiente, cancelado, completado), no lo borra
+      if (result.count > 0) {
+        return res.status(400).json({
+          error: 'No se puede eliminar permanentemente el servicio porque tiene historial de turnos.'
+        });
+      }
+
+      // Si no hay referencias, procede a la eliminación física
+      db.run('DELETE FROM services WHERE id = ?', [id], function(err) {
+        if (err) {
+          console.error('Error al eliminar servicio:', err);
+          return res.status(500).json({ error: 'Error al eliminar servicio permanentemente.' });
+        }
+        if (this.changes === 0) {
+          return res.status(404).json({ error: 'Servicio no encontrado.' });
+        }
+        res.json({ message: 'Servicio eliminado permanentemente.' });
+      });
     }
   );
 });
