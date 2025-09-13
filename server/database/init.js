@@ -121,13 +121,13 @@ async function initializeDatabase() {
       `);
 
       // Insertar servicios de ejemplo
-      database.run(`
+      /*database.run(`
         INSERT OR IGNORE INTO services (name, description, duration, price) VALUES
         ('Corte de cabello', 'Corte de cabello profesional', 30, 15.00),
         ('Barba', 'Arreglo de barba y bigote', 20, 10.00),
         ('Corte + Barba', 'Corte de cabello y arreglo de barba', 45, 22.00),
         ('Lavado de cabello', 'Lavado y peinado', 15, 8.00)
-      `);
+      `);*/
 
       // Insertar admin por defecto (password: admin123)
       const bcrypt = require('bcryptjs');

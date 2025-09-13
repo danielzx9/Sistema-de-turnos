@@ -19,6 +19,7 @@ export interface Client {
   updated_at: string
 }
 
+
 export interface Appointment {
   id: number
   client_id: number
