@@ -9,6 +9,7 @@ export interface Service {
   updated_at: string
 }
 
+//hola gran hpta
 export interface Client {
   id: number
   name: string
@@ -38,7 +39,7 @@ export interface Appointment {
   service_duration?: number
   service_price?: number
 }
-
+//t22222222222222
 export interface BusinessConfig {
   id: number
   business_name: string
