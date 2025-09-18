@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
-const { getDatabase } = require('../database/init');
+const { getPool } = require('../database/init');
 
 const router = express.Router();
 
@@ -36,47 +36,51 @@ router.post('/login', [
     }
 
     const { username, password } = req.body;
-    const db = getDatabase();
+    const pool = getPool();
 
-    db.get(
-      'SELECT * FROM admins WHERE username = ? OR email = ?',
-      [username, username],
-      async (err, admin) => {
-        if (err) {
-          return res.status(500).json({ error: 'Error del servidor' });
-        }
+    try {
+      const [rows] = await pool.execute(
+        'SELECT * FROM admins WHERE username = ? OR email = ?',
+        [username, username]
+      );
 
-        if (!admin) {
-          return res.status(401).json({ error: 'Credenciales inválidas' });
-        }
-
-        const isValidPassword = await bcrypt.compare(password, admin.password);
-        if (!isValidPassword) {
-          return res.status(401).json({ error: 'Credenciales inválidas' });
-        }
-
-        const token = jwt.sign(
-          { 
-            id: admin.id, 
-            username: admin.username,
-            email: admin.email 
-          },
-          process.env.JWT_SECRET,
-          { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-        );
-
-        res.json({
-          message: 'Login exitoso',
-          token,
-          user: {
-            id: admin.id,
-            username: admin.username,
-            email: admin.email,
-            name: admin.name
-          }
-        });
+      if (rows.length === 0) {
+        return res.status(401).json({ error: 'Credenciales inválidas' });
       }
-    );
+
+      const admin = rows[0];
+      const isValidPassword = await bcrypt.compare(password, admin.password);
+
+      if (!isValidPassword) {
+        return res.status(401).json({ error: 'Credenciales inválidas' });
+      }
+
+      const token = jwt.sign(
+        {
+          id: admin.idadmins,
+          barbershop_id: admin.barbershop_id,
+          username: admin.username,
+          email: admin.email
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+      );
+
+      res.json({
+        message: 'Login exitoso',
+        token,
+        user: {
+          id: admin.idadmins,
+          barbershop_id: admin.barbershop_id,
+          username: admin.username,
+          email: admin.email,
+          name: admin.name
+        }
+      });
+    } catch (error) {
+      console.error('Error en login:', error);
+      res.status(500).json({ error: 'Error interno del servidor' });
+    }
   } catch (error) {
     console.error('Error en login:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
@@ -97,41 +101,36 @@ router.post('/register', [
     }
 
     const { username, email, password, name } = req.body;
-    const db = getDatabase();
+    const pool = getPool();
 
-    // Verificar si el usuario ya existe
-    db.get(
-      'SELECT id FROM admins WHERE username = ? OR email = ?',
-      [username, email],
-      async (err, existingAdmin) => {
-        if (err) {
-          return res.status(500).json({ error: 'Error del servidor' });
-        }
+    try {
+      // Verificar si el usuario ya existe
+      const [existingRows] = await pool.execute(
+        'SELECT idadmins FROM admins WHERE username = ? OR email = ?',
+        [username, email]
+      );
 
-        if (existingAdmin) {
-          return res.status(400).json({ error: 'Usuario o email ya existe' });
-        }
-
-        // Hash de la contraseña
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        // Crear nuevo admin
-        db.run(
-          'INSERT INTO admins (username, email, password, name) VALUES (?, ?, ?, ?)',
-          [username, email, hashedPassword, name],
-          function(err) {
-            if (err) {
-              return res.status(500).json({ error: 'Error al crear usuario' });
-            }
-
-            res.status(201).json({
-              message: 'Usuario creado exitosamente',
-              userId: this.lastID
-            });
-          }
-        );
+      if (existingRows.length > 0) {
+        return res.status(400).json({ error: 'Usuario o email ya existe' });
       }
-    );
+
+      // Hash de la contraseña
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Crear nuevo admin (por defecto asignado a la barbería 1)
+      const [result] = await pool.execute(
+        'INSERT INTO admins (barbershop_id, username, email, password, name) VALUES (?, ?, ?, ?, ?)',
+        [1, username, email, hashedPassword, name]
+      );
+
+      res.status(201).json({
+        message: 'Usuario creado exitosamente',
+        userId: result.insertId
+      });
+    } catch (error) {
+      console.error('Error en registro:', error);
+      res.status(500).json({ error: 'Error interno del servidor' });
+    }
   } catch (error) {
     console.error('Error en registro:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
@@ -159,44 +158,41 @@ router.put('/change-password', [
     }
 
     const { currentPassword, newPassword } = req.body;
-    const db = getDatabase();
+    const pool = getPool();
 
-    // Obtener admin actual
-    db.get(
-      'SELECT password FROM admins WHERE id = ?',
-      [req.user.id],
-      async (err, admin) => {
-        if (err) {
-          return res.status(500).json({ error: 'Error del servidor' });
-        }
+    try {
+      // Obtener admin actual
+      const [rows] = await pool.execute(
+        'SELECT password FROM admins WHERE idadmins = ?',
+        [req.user.id]
+      );
 
-        if (!admin) {
-          return res.status(404).json({ error: 'Usuario no encontrado' });
-        }
-
-        // Verificar contraseña actual
-        const isValidPassword = await bcrypt.compare(currentPassword, admin.password);
-        if (!isValidPassword) {
-          return res.status(400).json({ error: 'Contraseña actual incorrecta' });
-        }
-
-        // Hash nueva contraseña
-        const hashedNewPassword = await bcrypt.hash(newPassword, 10);
-
-        // Actualizar contraseña
-        db.run(
-          'UPDATE admins SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-          [hashedNewPassword, req.user.id],
-          (err) => {
-            if (err) {
-              return res.status(500).json({ error: 'Error al actualizar contraseña' });
-            }
-
-            res.json({ message: 'Contraseña actualizada exitosamente' });
-          }
-        );
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'Usuario no encontrado' });
       }
-    );
+
+      const admin = rows[0];
+
+      // Verificar contraseña actual
+      const isValidPassword = await bcrypt.compare(currentPassword, admin.password);
+      if (!isValidPassword) {
+        return res.status(400).json({ error: 'Contraseña actual incorrecta' });
+      }
+
+      // Hash nueva contraseña
+      const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+
+      // Actualizar contraseña
+      await pool.execute(
+        'UPDATE admins SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE idadmins = ?',
+        [hashedNewPassword, req.user.id]
+      );
+
+      res.json({ message: 'Contraseña actualizada exitosamente' });
+    } catch (error) {
+      console.error('Error al cambiar contraseña:', error);
+      res.status(500).json({ error: 'Error interno del servidor' });
+    }
   } catch (error) {
     console.error('Error al cambiar contraseña:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
