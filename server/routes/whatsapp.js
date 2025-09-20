@@ -1,6 +1,6 @@
 const express = require('express');
 const axios = require('axios');
-const { getDatabase } = require('../database/init');
+const { getPool } = require('../database/init');
 const { authenticateToken } = require('./auth');
 const conversationManager = require('../utils/conversationManager');
 
@@ -175,32 +175,39 @@ async function sendWhatsAppMessage(phoneNumber, message) {
 }
 
 // Función para obtener detalles del turno
-function getAppointmentDetails(appointmentId) {
-  return new Promise((resolve, reject) => {
-    const db = getDatabase();
-    
-    db.get(
-      `SELECT 
-        a.*,
+async function getAppointmentDetails(appointmentId) {
+  try {
+    const pool = getPool();
+
+    const [rows] = await pool.execute(
+      `SELECT
+        a.idappointments as id,
+        a.client_id,
+        a.service_id,
+        a.barbershop_id,
+        a.barber_id,
+        a.appointment_date,
+        a.appointment_time,
+        a.status,
+        a.notes,
+        a.created_at,
+        a.updated_at,
         c.name as client_name,
         c.phone as client_phone,
         s.name as service_name,
         s.duration as service_duration,
         s.price as service_price
       FROM appointments a
-      JOIN clients c ON a.client_id = c.id
-      JOIN services s ON a.service_id = s.id
-      WHERE a.id = ?`,
-      [appointmentId],
-      (err, appointment) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(appointment);
-        }
-      }
+      JOIN clients c ON a.client_id = c.idclients
+      JOIN services s ON a.service_id = s.idservices
+      WHERE a.idappointments = ?`,
+      [appointmentId]
     );
-  });
+
+    return rows.length > 0 ? rows[0] : null;
+  } catch (error) {
+    throw error;
+  }
 }
 
 // Función para generar mensaje de confirmación
@@ -250,22 +257,19 @@ Si necesitas cancelar o reprogramar, contáctanos lo antes posible.`;
 // Función para enviar slots disponibles
 async function sendAvailableSlots(phoneNumber) {
   try {
+    const pool = getPool();
+
     // Obtener servicios disponibles
-    const db = getDatabase();
-    const services = await new Promise((resolve, reject) => {
-      db.all('SELECT * FROM services WHERE is_active = 1 ORDER BY name', (err, services) => {
-        if (err) reject(err);
-        else resolve(services);
-      });
-    });
+    const [services] = await pool.execute(
+      'SELECT idservices as id, barbershop_id, name, description, duration, price, is_active, created_at, updated_at FROM services WHERE is_active = 1 AND barbershop_id = 1 ORDER BY name'
+    );
 
     // Obtener configuración del negocio
-    const config = await new Promise((resolve, reject) => {
-      db.get('SELECT * FROM business_config LIMIT 1', (err, config) => {
-        if (err) reject(err);
-        else resolve(config);
-      });
-    });
+    const [configRows] = await pool.execute(
+      'SELECT idbarbershops as id, business_name, business_phone, business_address, business_email, open_time, close_time, slot_duration, working_days, created_at, updated_at FROM barbershops WHERE idbarbershops = 1'
+    );
+
+    const config = configRows.length > 0 ? configRows[0] : null;
 
     let servicesList = '';
     services.forEach(service => {
@@ -344,25 +348,33 @@ async function sendWelcomeMessage(phoneNumber) {
 // Función para enviar información de mi turno
 async function sendMyAppointment(phoneNumber) {
   try {
-    const db = getDatabase();
-    
+    const pool = getPool();
+
     // Normalizar el número de teléfono para buscar en ambos formatos
     const normalizedPhone = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
     const phoneWithoutPlus = phoneNumber.startsWith('+') ? phoneNumber.substring(1) : phoneNumber;
-    
-    const appointments = await new Promise((resolve, reject) => {
-      db.all(`
-        SELECT a.*, s.name as service_name, s.price 
-        FROM appointments a 
-        JOIN services s ON a.service_id = s.id 
-        JOIN clients c ON a.client_id = c.id 
-        WHERE (c.phone = ? OR c.phone = ?) AND a.status IN ('pending', 'confirmed')
-        ORDER BY a.appointment_date, a.appointment_time
-      `, [normalizedPhone, phoneWithoutPlus], (err, appointments) => {
-        if (err) reject(err);
-        else resolve(appointments);
-      });
-    });
+
+    const [appointments] = await pool.execute(`
+      SELECT
+        a.idappointments as id,
+        a.client_id,
+        a.service_id,
+        a.barbershop_id,
+        a.barber_id,
+        a.appointment_date,
+        a.appointment_time,
+        a.status,
+        a.notes,
+        a.created_at,
+        a.updated_at,
+        s.name as service_name,
+        s.price
+      FROM appointments a
+      JOIN services s ON a.service_id = s.idservices
+      JOIN clients c ON a.client_id = c.idclients
+      WHERE (c.phone = ? OR c.phone = ?) AND a.status IN ('pending', 'confirmed') AND a.barbershop_id = 1
+      ORDER BY a.appointment_date, a.appointment_time
+    `, [normalizedPhone, phoneWithoutPlus]);
 
     if (appointments.length === 0) {
       await sendWhatsAppMessage(phoneNumber, `❌ *No tienes turnos activos*
@@ -395,13 +407,12 @@ Para reservar un turno:
 // Función para enviar horarios de atención
 async function sendBusinessHours(phoneNumber) {
   try {
-    const db = getDatabase();
-    const config = await new Promise((resolve, reject) => {
-      db.get('SELECT * FROM business_config LIMIT 1', (err, config) => {
-        if (err) reject(err);
-        else resolve(config);
-      });
-    });
+    const pool = getPool();
+    const [configRows] = await pool.execute(
+      'SELECT idbarbershops as id, business_name, business_phone, business_address, business_email, open_time, close_time, slot_duration, working_days, created_at, updated_at FROM barbershops WHERE idbarbershops = 1'
+    );
+
+    const config = configRows.length > 0 ? configRows[0] : null;
 
     const message = `🕐 *Horarios de Atención*
 
@@ -458,13 +469,10 @@ async function sendReservationInstructions(phoneNumber) {
 // Función para iniciar proceso de reserva directa
 async function sendReservationStart(phoneNumber) {
   try {
-    const db = getDatabase();
-    const services = await new Promise((resolve, reject) => {
-      db.all('SELECT * FROM services WHERE is_active = 1 ORDER BY name', (err, services) => {
-        if (err) reject(err);
-        else resolve(services);
-      });
-    });
+    const pool = getPool();
+    const [services] = await pool.execute(
+      'SELECT idservices as id, barbershop_id, name, description, duration, price, is_active, created_at, updated_at FROM services WHERE is_active = 1 AND barbershop_id = 21 ORDER BY name'
+    );
 
     let serviceList = '🎯 *¡Vamos a reservar tu turno!*\n\n*Servicios disponibles:*\n\n';
     services.forEach((service, index) => {
@@ -482,13 +490,10 @@ async function sendReservationStart(phoneNumber) {
 // Función para enviar precios
 async function sendPrices(phoneNumber) {
   try {
-    const db = getDatabase();
-    const services = await new Promise((resolve, reject) => {
-      db.all('SELECT * FROM services WHERE is_active = 1 ORDER BY price', (err, services) => {
-        if (err) reject(err);
-        else resolve(services);
-      });
-    });
+    const pool = getPool();
+    const [services] = await pool.execute(
+      'SELECT idservices as id, barbershop_id, name, description, duration, price, is_active, created_at, updated_at FROM services WHERE is_active = 1 AND barbershop_id = 1 ORDER BY price'
+    );
 
     let message = `💰 *Lista de Precios*\n\n`;
     services.forEach(service => {
