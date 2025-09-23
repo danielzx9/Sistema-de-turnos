@@ -2,18 +2,18 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { getPool } = require('../database/init');
 const { authenticateToken } = require('./auth');
-
+//const mysql = require('mysql2');
 const router = express.Router();
 
 // Obtener configuración del negocio
-router.get('/config', async (req, res) => {
-  const { barbershopId = 1 } = req.query;
+router.get('/config',authenticateToken, async (req, res) => {
+  
   const pool = getPool();
 
   try {
     const [rows] = await pool.execute(
       'SELECT idbarbershops as id, business_name, business_phone, business_address, business_email, open_time, close_time, slot_duration, working_days, created_at, updated_at FROM barbershops WHERE idbarbershops = ?',
-      [barbershopId]
+      [req.user.barbershop_id]
     );
 
     if (rows.length === 0) {
@@ -79,6 +79,8 @@ router.put('/config', [
         req.user.barbershop_id
       ]
     );
+    
+
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Barbería no encontrada' });

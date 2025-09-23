@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const { getPool } = require('../database/init');
-
+const secret = process.env.JWT_SECRET;
 const router = express.Router();
 
 // Middleware para verificar token JWT
@@ -199,4 +199,4 @@ router.put('/change-password', [
   }
 });
 
-module.exports = { router, authenticateToken };
+module.exports = { router, authenticateToken, jwt, secret };
