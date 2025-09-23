@@ -14,7 +14,7 @@ interface Appointment {
   service_duration: number
   service_price: number
   appointment_date: string
-  appointment_time: string
+  qwer: string
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
   notes?: string
   created_at: string
@@ -200,7 +200,7 @@ export default function AppointmentsList() {
                       </div>
                       <div className="flex items-center text-sm text-gray-600">
                         <Clock className="h-4 w-4 mr-1" />
-                        {appointment.appointment_time}
+                        {appointment.qwer}
                       </div>
                     </div>
                     
