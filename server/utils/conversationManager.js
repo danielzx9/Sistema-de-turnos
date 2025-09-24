@@ -1,6 +1,8 @@
 // Gestor de conversaciones para WhatsApp
 const { getPool } = require('../database/init');
 
+
+
 class ConversationManager {
   constructor() {
     this.conversations = new Map(); // phoneNumber -> conversationState
@@ -26,7 +28,7 @@ class ConversationManager {
   isConversationExpired(phoneNumber) {
     const state = this.getConversationState(phoneNumber);
     if (!state) return true;
-    
+
     const fiveMinutes = 5 * 60 * 1000; // 5 minutos en milisegundos
     return (Date.now() - state.timestamp) > fiveMinutes;
   }
@@ -40,9 +42,9 @@ class ConversationManager {
   }
 
   // Procesar respuesta del usuario
-  async processUserResponse(phoneNumber, message) {
+  async processUserResponse(phoneNumber, message, botNumberId) {
     const state = this.getConversationState(phoneNumber);
-    
+
     if (!state || this.isConversationExpired(phoneNumber)) {
       this.clearConversation(phoneNumber);
       return { action: 'restart', message: 'La conversación ha expirado. Escribe "RESERVAR" para empezar de nuevo.' };
@@ -50,23 +52,23 @@ class ConversationManager {
 
     switch (state.step) {
       case 'select_service':
-        return await this.handleServiceSelection(phoneNumber, message);
-      
+        return await this.handleServiceSelection(phoneNumber, message, botNumberId);
+
       case 'select_date':
         return await this.handleDateSelection(phoneNumber, message);
-      
+
       case 'select_time':
-        return await this.handleTimeSelection(phoneNumber, message);
-      
-      case 'confirm_name':
+        return await this.handleTimeSelection(phoneNumber, message, botNumberId);
+
+      /*case 'confirm_name':
         return await this.handleNameConfirmation(phoneNumber, message);
-      
+
       case 'confirm_phone':
-        return await this.handlePhoneConfirmation(phoneNumber, message);
-      
+        return await this.handlePhoneConfirmation(phoneNumber, message);*/
+
       case 'final_confirmation':
-        return await this.handleFinalConfirmation(phoneNumber, message);
-      
+        return await this.handleFinalConfirmation(phoneNumber, message, botNumberId);
+
       default:
         this.clearConversation(phoneNumber);
         return { action: 'restart', message: 'Error en el proceso. Escribe "RESERVAR" para empezar de nuevo.' };
@@ -74,18 +76,25 @@ class ConversationManager {
   }
 
   // Manejar selección de servicio
-  async handleServiceSelection(phoneNumber, message) {
+  async handleServiceSelection(phoneNumber, message, botNumberId) {
     const pool = getPool();
-
     try {
+      const [rows] = await pool.execute(
+        'SELECT * FROM barbershops WHERE business_phone = ? LIMIT 1',
+        [botNumberId]
+      );
+
+      const numberBarber = rows[0]; // primer resultado del array
+
       const [services] = await pool.execute(
-        'SELECT * FROM services WHERE is_active = 1 AND barbershop_id = 1 ORDER BY name'
+        'SELECT * FROM services WHERE is_active = 1 AND barbershop_id = ? ORDER BY name',
+        [numberBarber.idbarbershops]
       );
 
       const selectedNumber = parseInt(message);
       if (selectedNumber >= 1 && selectedNumber <= services.length) {
         const selectedService = services[selectedNumber - 1];
-        
+
         this.setConversationState(phoneNumber, {
           step: 'select_date',
           data: { ...this.getConversationState(phoneNumber).data, service: selectedService }
@@ -118,9 +127,9 @@ class ConversationManager {
   async handleDateSelection(phoneNumber, message) {
     const state = this.getConversationState(phoneNumber);
     const today = new Date();
-    
+
     let selectedDate;
-    
+
     // Procesar diferentes formatos de fecha
     if (message.toLowerCase().includes('mañana')) {
       selectedDate = new Date(today.getTime() + 24 * 60 * 60 * 1000);
@@ -165,14 +174,24 @@ class ConversationManager {
   }
 
   // Manejar selección de hora
-  async handleTimeSelection(phoneNumber, message) {
+  async handleTimeSelection(phoneNumber, message, botNumberId) {
     const state = this.getConversationState(phoneNumber);
     const pool = getPool();
 
+    console.log(state);
+
     try {
+      const [rows] = await pool.execute(
+        'SELECT * FROM barbershops WHERE business_phone = ? LIMIT 1',
+        [botNumberId]
+      );
+
+      const numberBarber = rows[0]; // primer resultado del array
+
       // Obtener configuración del negocio
       const [configRows] = await pool.execute(
-        'SELECT * FROM barbershops WHERE idbarbershops = 1'
+        'SELECT * FROM barbershops WHERE idbarbershops = ?',
+        [numberBarber.idbarbershops]
       );
 
       if (configRows.length === 0) {
@@ -197,10 +216,10 @@ class ConversationManager {
       // Verificar que esté dentro del horario de atención
       const [openHour, openMin] = config.open_time.split(':').map(Number);
       const [closeHour, closeMin] = config.close_time.split(':').map(Number);
-      
+
       const openTime = new Date(state.data.date);
       openTime.setHours(openHour, openMin, 0, 0);
-      
+
       const closeTime = new Date(state.data.date);
       closeTime.setHours(closeHour, closeMin, 0, 0);
 
@@ -213,10 +232,10 @@ class ConversationManager {
 
       // Verificar disponibilidad
       const dateStr = state.data.date.toISOString().split('T')[0];
-      const availableSlots = await this.getAvailableSlots(dateStr, state.data.service.id);
-      
+      const availableSlots = await this.getAvailableSlots(dateStr, state.data.service.idservices, botNumberId);
+
       const isAvailable = availableSlots.some(slot => slot.time === message);
-      
+
       if (!isAvailable) {
         return {
           action: 'send_message',
@@ -224,14 +243,18 @@ class ConversationManager {
         };
       }
 
+
+
       this.setConversationState(phoneNumber, {
-        step: 'confirm_name',
-        data: { ...state.data, time: message }
+        step: 'final_confirmation',
+        data: { ...state.data, phone: message }
       });
+
+      const dateStr2 = state.data.date.toLocaleDateString('es-ES');
 
       return {
         action: 'send_message',
-        message: `✅ *Horario seleccionado:* ${message}\n\n👤 *¿Cuál es tu nombre completo?*\n\nEscribe tu nombre y apellido:`
+        message: `📋 *Resumen de tu reserva:*\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${dateStr2}\n*Hora:* ${state.data.time}\n*Teléfono:* ${phoneNumber}\n*Precio:* $${state.data.service.price}\n\n¿Confirmas esta reserva?\n\nEscribe:\n• "SI" para confirmar\n• "NO" para cancelar`
       };
     } catch (error) {
       console.error('Error al validar horario:', error);
@@ -241,7 +264,7 @@ class ConversationManager {
   }
 
   // Manejar confirmación de nombre
-  async handleNameConfirmation(phoneNumber, message) {
+  /*async handleNameConfirmation(phoneNumber, message) {
     if (message.length < 3) {
       return {
         action: 'send_message',
@@ -259,7 +282,7 @@ class ConversationManager {
       action: 'send_message',
       message: `✅ *Nombre:* ${message}\n\n📱 *¿Cuál es tu número de teléfono?*\n\nEscribe tu número (incluyendo código de país):\n\n*Ejemplo:* +1234567890`
     };
-  }
+  }*/
 
   // Manejar confirmación de teléfono
   async handlePhoneConfirmation(phoneNumber, message) {
@@ -278,24 +301,26 @@ class ConversationManager {
     });
 
     const dateStr = state.data.date.toLocaleDateString('es-ES');
-    
+
     return {
       action: 'send_message',
-      message: `📋 *Resumen de tu reserva:*\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${dateStr}\n*Hora:* ${state.data.time}\n*Nombre:* ${state.data.name}\n*Teléfono:* ${state.data.phone}\n*Precio:* $${state.data.service.price}\n\n¿Confirmas esta reserva?\n\nEscribe:\n• "SI" para confirmar\n• "NO" para cancelar`
+      message: `📋 *Resumen de tu reserva:*\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${dateStr}\n*Hora:* ${state.data.time}\n*Teléfono:* ${phoneNumber}\n*Precio:* $${state.data.service.price}\n\n¿Confirmas esta reserva?\n\nEscribe:\n• "SI" para confirmar\n• "NO" para cancelar`
     };
   }
 
   // Manejar confirmación final
   async handleFinalConfirmation(phoneNumber, message) {
     const state = this.getConversationState(phoneNumber);
-    
+
     if (message.toLowerCase() === 'si' || message.toLowerCase() === 'sí') {
       try {
         // Crear la reserva en la base de datos
-        const result = await this.createAppointment(state.data);
-        
+        console.log("configRows:", JSON.stringify(state, null, 2));
+        console.log("Length:", state.length);
+        const result = await this.createAppointment(state.data, phoneNumber);
+
         this.clearConversation(phoneNumber);
-        
+
         return {
           action: 'send_message',
           message: `🎉 *¡Reserva Confirmada!*\n\nTu turno ha sido reservado exitosamente:\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${state.data.date.toLocaleDateString('es-ES')}\n*Hora:* ${state.data.time}\n*Precio:* $${state.data.service.price}\n\nTe enviaremos una confirmación por WhatsApp.\n\n¡Te esperamos! 😊`
@@ -315,15 +340,23 @@ class ConversationManager {
   }
 
   // Obtener slots disponibles
-  async getAvailableSlots(date, serviceId, barbershopId = 1) {
+  async getAvailableSlots(date, serviceId, botNumberId) {
     const pool = getPool();
 
     try {
+      const [rows] = await pool.execute(
+        'SELECT * FROM barbershops WHERE business_phone = ? LIMIT 1',
+        [botNumberId]
+      );
+
+      const numberBarber = rows[0]; // primer resultado del array
+
       // Obtener configuración del negocio
       const [configRows] = await pool.execute(
         'SELECT * FROM barbershops WHERE idbarbershops = ?',
-        [barbershopId]
+        [numberBarber.idbarbershops]
       );
+
 
       if (configRows.length === 0) {
         throw new Error('Configuración no encontrada');
@@ -334,19 +367,23 @@ class ConversationManager {
       // Obtener duración del servicio
       const [serviceRows] = await pool.execute(
         'SELECT duration FROM services WHERE idservices = ? AND is_active = 1 AND barbershop_id = ?',
-        [serviceId, barbershopId]
+        [serviceId, numberBarber.idbarbershops]
       );
+
+      console.log("configRows:", JSON.stringify(serviceRows, null, 2));
+      console.log("Length:", serviceRows.length);
 
       if (serviceRows.length === 0) {
         throw new Error('Servicio no encontrado');
       }
+
 
       const service = serviceRows[0];
 
       // Obtener turnos ocupados para esa fecha
       const [occupiedSlots] = await pool.execute(
         'SELECT a.appointment_time, s.duration FROM appointments a JOIN services s ON a.service_id = s.idservices WHERE a.appointment_date = ? AND a.barbershop_id = ? AND a.status IN ("pending", "confirmed")',
-        [date, barbershopId]
+        [date, numberBarber.idbarbershops]
       );
 
       // Generar slots disponibles
@@ -407,15 +444,20 @@ class ConversationManager {
   }
 
   // Crear cita en la base de datos
-  async createAppointment(data, barbershopId = 1) {
+  async createAppointment(data, phoneNumber) {
     const pool = getPool();
 
     try {
+
+
       // Buscar o crear cliente
       const [clientRows] = await pool.execute(
         'SELECT idclients FROM clients WHERE phone = ? AND barbershop_id = ?',
-        [data.phone, barbershopId]
+        [phoneNumber, data.service.barbershop_id]
       );
+
+      console.log("configRows:", JSON.stringify(clientRows, null, 2));
+      console.log("Length:", clientRows.length);
 
       let clientId;
       if (clientRows.length > 0) {
@@ -423,21 +465,31 @@ class ConversationManager {
         // Actualizar datos del cliente
         await pool.execute(
           'UPDATE clients SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE idclients = ?',
-          [data.name, clientId]
+          [phoneNumber, clientId]
         );
       } else {
         // Crear nuevo cliente
         const [clientResult] = await pool.execute(
           'INSERT INTO clients (barbershop_id, name, phone) VALUES (?, ?, ?)',
-          [barbershopId, data.name, data.phone]
+          [data.service.barbershop_id, phoneNumber, phoneNumber]
         );
         clientId = clientResult.insertId;
       }
 
+      const datePart = data.date.toISOString().split("T")[0];
+
+      const timePart = data.phone.length === 5
+        ? data.phone + ":00"   // si viene "10:00" -> "10:00:00"
+        : data.phone;          // si ya viene con segundos
+
+      const dateTimeValue = `${datePart} ${timePart}`;
+      // 👉 "2025-09-22 10:00:00"
+
+
       // Crear turno
       const [appointmentResult] = await pool.execute(
         'INSERT INTO appointments (client_id, service_id, barbershop_id, appointment_date, appointment_time, status) VALUES (?, ?, ?, ?, ?, ?)',
-        [clientId, data.service.id, barbershopId, data.date.toISOString().split('T')[0], data.time, 'pending']
+        [clientId, data.service.idservices, data.service.barbershop_id, datePart, dateTimeValue, 'pending']
       );
 
       return { appointmentId: appointmentResult.insertId };
