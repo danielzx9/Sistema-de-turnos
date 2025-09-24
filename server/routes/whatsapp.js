@@ -39,7 +39,7 @@ router.post('/webhook', (req, res) => {
           const botNumber = metadata.display_phone_number;
           if (messages) {
             messages.forEach(message => {
-              processIncomingMessage(message,botNumber);
+              processIncomingMessage(message, botNumber);
             });
           }
         }
@@ -53,7 +53,7 @@ router.post('/webhook', (req, res) => {
 // Enviar mensaje de confirmación de turno
 router.post('/send-confirmation', authenticateToken, async (req, res) => {
   const { appointmentId, phoneNumber } = req.body;
-  
+
   if (!appointmentId || !phoneNumber) {
     return res.status(400).json({ error: 'ID de turno y número de teléfono son requeridos' });
   }
@@ -66,7 +66,7 @@ router.post('/send-confirmation', authenticateToken, async (req, res) => {
 
     const message = generateConfirmationMessage(appointment);
     await sendWhatsAppMessage(phoneNumber, message);
-    
+
     res.json({ message: 'Mensaje de confirmación enviado exitosamente' });
   } catch (error) {
     console.error('Error al enviar confirmación:', error);
@@ -77,7 +77,7 @@ router.post('/send-confirmation', authenticateToken, async (req, res) => {
 // Enviar recordatorio de turno
 router.post('/send-reminder', authenticateToken, async (req, res) => {
   const { appointmentId, phoneNumber } = req.body;
-  
+
   if (!appointmentId || !phoneNumber) {
     return res.status(400).json({ error: 'ID de turno y número de teléfono son requeridos' });
   }
@@ -90,7 +90,7 @@ router.post('/send-reminder', authenticateToken, async (req, res) => {
 
     const message = generateReminderMessage(appointment);
     await sendWhatsAppMessage(phoneNumber, message);
-    
+
     res.json({ message: 'Recordatorio enviado exitosamente' });
   } catch (error) {
     console.error('Error al enviar recordatorio:', error);
@@ -99,21 +99,21 @@ router.post('/send-reminder', authenticateToken, async (req, res) => {
 });
 
 // Función para procesar mensajes entrantes
-async function processIncomingMessage(message,botNumberId) {
+async function processIncomingMessage(message, botNumberId) {
   const phoneNumber = message.from;
   const messageText = message.text?.body || '';
-  
+
   console.log(`Mensaje recibido de ${phoneNumber}: ${messageText}`);
-  
+
   const text = messageText.toLowerCase().trim();
-  
+
   // Verificar si hay una conversación activa
   const conversationState = conversationManager.getConversationState(phoneNumber);
-  
+
   if (conversationState && !conversationManager.isConversationExpired(phoneNumber)) {
     // Procesar respuesta en conversación activa
-    const response = await conversationManager.processUserResponse(phoneNumber, messageText,botNumberId);
-    
+    const response = await conversationManager.processUserResponse(phoneNumber, messageText, botNumberId);
+
     if (response.action === 'send_message') {
       await sendWhatsAppMessage(phoneNumber, response.message);
     } else if (response.action === 'restart') {
@@ -121,11 +121,11 @@ async function processIncomingMessage(message,botNumberId) {
     }
     return;
   }
-  
+
   // Comandos del bot (solo si no hay conversación activa)
- if (text.includes('mi turno') || text === 'mi turno') {
-    await sendMyAppointment(phoneNumber,botNumberId);
-  }  else if (text.includes('reservar') || text === 'reservar') {
+  if (text.includes('mi turno') || text === 'mi turno') {
+    await sendMyAppointment(phoneNumber, botNumberId);
+  } else if (text.includes('reservar') || text === 'reservar') {
     // Iniciar proceso de reserva directa
     conversationManager.startReservation(phoneNumber);
     await sendReservationStart(phoneNumber);
@@ -157,7 +157,7 @@ async function sendWhatsAppMessage(phoneNumber, message) {
         }
       }
     );
-    
+
     console.log('✅ Mensaje enviado exitosamente:', response.data);
     return response.data;
   } catch (error) {
@@ -206,7 +206,7 @@ async function getAppointmentDetails(appointmentId) {
 function generateConfirmationMessage(appointment) {
   const date = new Date(appointment.appointment_date).toLocaleDateString('es-ES');
   const time = appointment.appointment_time;
-  
+
   return `🎉 *¡Turno Confirmado!*
 
 Hola ${appointment.client_name}, tu turno ha sido confirmado:
@@ -229,7 +229,7 @@ Hola ${appointment.client_name}, tu turno ha sido confirmado:
 function generateReminderMessage(appointment) {
   const date = new Date(appointment.appointment_date).toLocaleDateString('es-ES');
   const time = appointment.appointment_time;
-  
+
   return `⏰ *Recordatorio de Turno*
 
 Hola ${appointment.client_name}, te recordamos que tienes un turno mañana:
@@ -288,7 +288,7 @@ ${servicesList}
 • "HORARIOS" - Ver horarios disponibles
 
 ¡Estamos aquí para ayudarte! 😊`;
-    
+
     await sendWhatsAppMessage(phoneNumber, message);
   } catch (error) {
     console.error('Error al obtener servicios:', error);
@@ -310,7 +310,7 @@ Para cancelar tu turno, por favor:
 🌐 *Sitio web:* [Tu sitio web aquí]
 
 ¡Gracias por tu comprensión! 😊`;
-  
+
   await sendWhatsAppMessage(phoneNumber, message);
 }
 
@@ -329,7 +329,7 @@ async function sendWelcomeMessage(phoneNumber) {
 📍 *Dirección:* ${process.env.BUSINESS_ADDRESS || 'Dirección del negocio'}
 
 ¡Estamos aquí para ayudarte! 😊`;
-  
+
   await sendWhatsAppMessage(phoneNumber, message);
 }
 
@@ -362,7 +362,7 @@ async function sendMyAppointment(phoneNumber) {
       JOIN clients c ON a.client_id = c.idclients
       WHERE (c.phone = ? OR c.phone = ?) AND a.status IN ('pending', 'confirmed') AND a.barbershop_id = 1
       ORDER BY a.appointment_date, a.appointment_time
-    `, [normalizedPhone, phoneWithoutPlus, ]);
+    `, [normalizedPhone, phoneWithoutPlus,]);
 
     if (appointments.length === 0) {
       await sendWhatsAppMessage(phoneNumber, `❌ *No tienes turnos activos*
@@ -375,14 +375,21 @@ Para reservar un turno:
     } else {
       let message = `📅 *Tus Turnos Activos*\n\n`;
       appointments.forEach((apt, index) => {
+        const timeStr = new Date(apt.appointment_time)
+          .toLocaleTimeString('es-ES', {  // solo la hora
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,               // 24h, quítalo si quieres AM/PM
+            timeZone: 'America/Bogota'   // ajusta a tu zona
+          });
         const date = new Date(apt.appointment_date).toLocaleDateString('es-ES');
         message += `${index + 1}. *${apt.service_name}*\n`;
-        message += `📅 ${date} a las ${apt.appointment_time}\n`;
+        message += `📅 ${date} a las ${timeStr}\n`;
         message += `💰 $${apt.price}\n`;
         message += `📊 Estado: ${apt.status === 'pending' ? 'Pendiente' : 'Confirmado'}\n\n`;
       });
       message += `Para cancelar, escribe "CANCELAR"`;
-      
+
       await sendWhatsAppMessage(phoneNumber, message);
     }
   } catch (error) {
