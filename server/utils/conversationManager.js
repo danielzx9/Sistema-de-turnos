@@ -79,7 +79,7 @@ class ConversationManager {
 
     try {
       const [services] = await pool.execute(
-        'SELECT * FROM services WHERE is_active = 1 AND barbershop_id = 21 ORDER BY name'
+        'SELECT * FROM services WHERE is_active = 1 AND barbershop_id = 1 ORDER BY name'
       );
 
       const selectedNumber = parseInt(message);
