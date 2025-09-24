@@ -471,7 +471,7 @@ async function sendReservationStart(phoneNumber) {
   try {
     const pool = getPool();
     const [services] = await pool.execute(
-      'SELECT idservices as id, barbershop_id, name, description, duration, price, is_active, created_at, updated_at FROM services WHERE is_active = 1 AND barbershop_id = 21 ORDER BY name'
+      'SELECT idservices as id, barbershop_id, name, description, duration, price, is_active, created_at, updated_at FROM services WHERE is_active = 1 AND barbershop_id = 1 ORDER BY name'
     );
 
     let serviceList = '🎯 *¡Vamos a reservar tu turno!*\n\n*Servicios disponibles:*\n\n';
