@@ -242,19 +242,18 @@ class ConversationManager {
           message: `❌ *Horario no disponible*\n\nEl horario ${message} no está disponible para el ${dateStr}.\n\n*Horarios disponibles:*\n${availableSlots.slice(0, 5).map(slot => `• ${slot.time}`).join('\n')}\n\nPor favor, selecciona uno de estos horarios.`
         };
       }
-
-
-
       this.setConversationState(phoneNumber, {
         step: 'final_confirmation',
-        data: { ...state.data, phone: message }
+        data: { ...state.data, time: message }
       });
 
-      const dateStr2 = state.data.date.toLocaleDateString('es-ES');
+      const newState = this.getConversationState(phoneNumber);
+      const dateStr2 = newState.data.date.toLocaleDateString('es-ES');
+      const horaStr = newState.data.time;
 
       return {
         action: 'send_message',
-        message: `📋 *Resumen de tu reserva:*\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${dateStr2}\n*Hora:* ${state.data.time}\n*Teléfono:* ${phoneNumber}\n*Precio:* $${state.data.service.price}\n\n¿Confirmas esta reserva?\n\nEscribe:\n• "SI" para confirmar\n• "NO" para cancelar`
+        message: `📋 *Resumen de tu reserva:*\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${dateStr2}\n*Hora:* ${horaStr}\n*Teléfono:* ${phoneNumber}\n*Precio:* $${state.data.service.price}\n\n¿Confirmas esta reserva?\n\nEscribe:\n• "SI" para confirmar\n• "NO" para cancelar`
       };
     } catch (error) {
       console.error('Error al validar horario:', error);
@@ -286,25 +285,17 @@ class ConversationManager {
 
   // Manejar confirmación de teléfono
   async handlePhoneConfirmation(phoneNumber, message) {
-    const phoneRegex = /^[+]?[\d\s-()]+$/;
-    if (!phoneRegex.test(message)) {
-      return {
-        action: 'send_message',
-        message: '❌ *Formato de teléfono inválido*\n\nPor favor, escribe tu número de teléfono:\n\n*Ejemplo:* +1234567890'
-      };
-    }
-
     const state = this.getConversationState(phoneNumber);
     this.setConversationState(phoneNumber, {
       step: 'final_confirmation',
-      data: { ...state.data, phone: message }
+      data: { ...state.data, time: message }
     });
-
     const dateStr = state.data.date.toLocaleDateString('es-ES');
-
+    const horaStr = state.data.time;
+    console.log('jaja' + horaStr);
     return {
       action: 'send_message',
-      message: `📋 *Resumen de tu reserva:*\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${dateStr}\n*Hora:* ${state.data.time}\n*Teléfono:* ${phoneNumber}\n*Precio:* $${state.data.service.price}\n\n¿Confirmas esta reserva?\n\nEscribe:\n• "SI" para confirmar\n• "NO" para cancelar`
+      message: `📋 *Resumen de tu reserva:*\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${dateStr}\n*Hora:* ${horaStr}\n*Teléfono:* ${phoneNumber}\n*Precio:* $${state.data.service.price}\n\n¿Confirmas esta reserva?\n\nEscribe:\n• "SI" para confirmar\n• "NO" para cancelar`
     };
   }
 
@@ -315,15 +306,14 @@ class ConversationManager {
     if (message.toLowerCase() === 'si' || message.toLowerCase() === 'sí') {
       try {
         // Crear la reserva en la base de datos
-        console.log("configRows:", JSON.stringify(state, null, 2));
-        console.log("Length:", state.length);
         const result = await this.createAppointment(state.data, phoneNumber);
 
         this.clearConversation(phoneNumber);
+        const horaStr = state.data.time;
 
         return {
           action: 'send_message',
-          message: `🎉 *¡Reserva Confirmada!*\n\nTu turno ha sido reservado exitosamente:\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${state.data.date.toLocaleDateString('es-ES')}\n*Hora:* ${state.data.time}\n*Precio:* $${state.data.service.price}\n\nTe enviaremos una confirmación por WhatsApp.\n\n¡Te esperamos! 😊`
+          message: `🎉 *¡Reserva Confirmada!*\n\nTu turno ha sido reservado exitosamente:\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${state.data.date.toLocaleDateString('es-ES')}\n*Hora:* ${horaStr}\n*Precio:* $${state.data.service.price}\n\nTe enviaremos una confirmación por WhatsApp.\n\n¡Te esperamos! 😊`
         };
       } catch (error) {
         console.error('Error al crear reserva:', error);
@@ -478,9 +468,9 @@ class ConversationManager {
 
       const datePart = data.date.toISOString().split("T")[0];
 
-      const timePart = data.phone.length === 5
-        ? data.phone + ":00"   // si viene "10:00" -> "10:00:00"
-        : data.phone;          // si ya viene con segundos
+      const timePart = data.time.length === 5
+        ? data.time + ":00"   // si viene "10:00" -> "10:00:00"
+        : data.time;          // si ya viene con segundos
 
       const dateTimeValue = `${datePart} ${timePart}`;
       // 👉 "2025-09-22 10:00:00"
