@@ -19,6 +19,21 @@ function getPool() {
   return pool;
 }
 
+async function initializeDatabase() {
+  const pool = getPool();
+
+  try {
+
+    // Insertar datos iniciales
+    await insertInitialData(pool);
+
+    console.log('✅ Base de datos MySQL inicializada correctamente');
+    return true;
+  } catch (error) {
+    console.error('❌ Error al inicializar la base de datos:', error);
+    throw error;
+  }
+}
 
 async function insertInitialData(pool) {
   try {
@@ -101,5 +116,6 @@ async function closeDatabase() {
 
 module.exports = {
   getPool,
+  initializeDatabase,
   closeDatabase
 };
