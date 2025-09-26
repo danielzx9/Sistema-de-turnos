@@ -49,7 +49,7 @@ export const createAppointment = async (appointmentData: {
   clientEmail?: string
   serviceId: number
   appointmentDate: string
-  qwer: string
+  appointment_time: string
   notes?: string
 }) => {
   const response = await api.post('/appointments', appointmentData)

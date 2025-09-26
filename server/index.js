@@ -4,7 +4,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
-const { initializeDatabase } = require('./database/init');
+
 const { router: authRoutes } = require('./routes/auth');
 const appointmentRoutes = require('./routes/appointments');
 const serviceRoutes = require('./routes/services');
@@ -68,7 +68,6 @@ app.use('*', (req, res) => {
 // Inicializar base de datos y servidor
 async function startServer() {
   try {
-    await initializeDatabase();
     console.log('✅ Base de datos inicializada correctamente');
     
     app.listen(PORT, () => {
