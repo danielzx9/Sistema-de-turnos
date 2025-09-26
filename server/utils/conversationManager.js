@@ -262,26 +262,6 @@ class ConversationManager {
     }
   }
 
-  // Manejar confirmación de nombre
-  /*async handleNameConfirmation(phoneNumber, message) {
-    if (message.length < 3) {
-      return {
-        action: 'send_message',
-        message: '❌ *Nombre muy corto*\n\nPor favor, escribe tu nombre completo (nombre y apellido):'
-      };
-    }
-
-    const state = this.getConversationState(phoneNumber);
-    this.setConversationState(phoneNumber, {
-      step: 'confirm_phone',
-      data: { ...state.data, name: message }
-    });
-
-    return {
-      action: 'send_message',
-      message: `✅ *Nombre:* ${message}\n\n📱 *¿Cuál es tu número de teléfono?*\n\nEscribe tu número (incluyendo código de país):\n\n*Ejemplo:* +1234567890`
-    };
-  }*/
 
   // Manejar confirmación de teléfono
   async handlePhoneConfirmation(phoneNumber, message) {
