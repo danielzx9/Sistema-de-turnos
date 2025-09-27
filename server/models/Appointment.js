@@ -117,13 +117,13 @@ class Appointment {
     return result.affectedRows > 0;
   }
 
-  static async findOccupiedSlots(date, barbershopId) {
+  static async findOccupiedSlots(date, time, barbershopId) {
     const pool = getPool();
     const [rows] = await pool.execute(
-      'SELECT a.appointment_time, s.duration FROM appointments a JOIN services s ON a.service_id = s.idservices WHERE a.appointment_date = ? AND a.barbershop_id = ? AND a.status IN ("pending", "confirmed") LIMIT 1',
-      [date, barbershopId]
+      `SELECT a.appointment_time, s.duration FROM appointments a JOIN services s ON a.service_id = s.idservices WHERE a.appointment_date = ? AND TIME_FORMAT(a.appointment_time, '%H:%i') = TIME_FORMAT(?, '%H:%i') AND a.barbershop_id = ? AND a.status IN ("pending", "confirmed") LIMIT 1`,
+      [date, time, barbershopId]
     );
-    return rows[0] || null;
+    return rows.length > 0;
   }
 
   static async findByPhone(phone, barbershopId) {

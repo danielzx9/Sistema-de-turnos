@@ -3,6 +3,7 @@ const Appointment = require('../models/Appointment');
 const Service = require('../models/Service');
 const Business = require('../models/Business');
 const Client = require('../models/Client');
+const BotNumberService = require('../services/BotNumberService');
 const moment = require('moment');
 
 class AppointmentController {
@@ -26,7 +27,10 @@ class AppointmentController {
   }
 
   static async getAvailableSlots(req, res) {
-    const { date, serviceId, barbershopId = 1 } = req.query;
+    const botNumber = BotNumberService.getBotNumber();
+    const barbershops = await Appointment.findBybotNumber(botNumber);
+    const idbarbershops = barbershops.idbarbershops;
+    const { date, serviceId, barbershopId = idbarbershops } = req.query;
 
     if (!date || !serviceId) {
       return res.status(400).json({ error: 'Fecha y ID de servicio son requeridos' });
@@ -58,23 +62,14 @@ class AppointmentController {
       res.status(500).json({ error: 'Error al obtener slots disponibles' });
     }
   }
+  static async isSlotAvailable(appointmentDate, appointmentTime, barbershopId) {
+    // Check if slot is available
+    const existing = await Appointment.findOccupiedSlots(appointmentDate, appointmentTime, barbershopId);
+    return !existing;
+  }
 
-  static async create(req, res) {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { clientName, clientPhone, clientEmail, serviceId, appointmentDate, appointmentTime, notes, barbershopId = 1, barberId } = req.body;
-
+  static async create({ clientName, clientPhone, clientEmail, serviceId, appointmentDate, appointmentTime, notes, barbershopId, barberId }) {
     try {
-      // Check if slot is available
-      const existing = await Appointment.findOccupiedSlots(appointmentDate, barbershopId);
-      const isOccupied = existing.some(slot => slot.appointment_time === appointmentTime);
-      if (isOccupied) {
-        return res.status(400).json({ error: 'El horario seleccionado no está disponible' });
-      }
-
       // Find or create client
       let client = await Client.findByPhone(clientPhone, barbershopId);
       let clientId;
@@ -91,7 +86,7 @@ class AppointmentController {
       }
 
       // Create appointment
-      const appointmentId = await Appointment.create({
+      return Appointment.create({
         client_id: clientId,
         service_id: serviceId,
         barbershop_id: barbershopId,
@@ -99,11 +94,6 @@ class AppointmentController {
         appointment_date: appointmentDate,
         appointment_time: appointmentTime,
         notes
-      });
-
-      res.status(201).json({
-        message: 'Turno creado exitosamente',
-        appointmentId
       });
     } catch (error) {
       console.error('Error al crear turno:', error);

@@ -2,6 +2,7 @@ const axios = require('axios');
 const Appointment = require('../models/Appointment');
 const Service = require('../models/Service');
 const Business = require('../models/Business');
+const BotNumberService = require('../services/BotNumberService');
 const conversationManager = require('../utils/conversationManager');
 
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v18.0';
@@ -33,6 +34,7 @@ class WhatsAppController {
             const metadata = change.value?.metadata || {};
             const messages = change.value.messages;
             const botNumber = metadata.display_phone_number;
+            BotNumberService.setBotNumber(botNumber);
             if (messages) {
               messages.forEach(message => {
                 processIncomingMessage(message, botNumber);
@@ -161,7 +163,10 @@ async function sendWhatsAppMessage(phoneNumber, message) {
 
 async function getAppointmentDetails(appointmentId) {
   try {
-    const appointment = await Appointment.findById(appointmentId, 1); // Assuming barbershop_id 1 for now
+    const botNumber = BotNumberService.getBotNumber();
+    const barbershops = await Appointment.findBybotNumber(botNumber);
+    const idbarbershops = barbershops.idbarbershops;
+    const appointment = await Appointment.findById(appointmentId, idbarbershops); // Assuming barbershop_id 1 for now
     return appointment;
   } catch (error) {
     throw error;
@@ -211,6 +216,10 @@ Si necesitas cancelar o reprogramar, contáctanos lo antes posible.`;
 }
 
 async function sendWelcomeMessage(phoneNumber) {
+
+    const botNumber = BotNumberService.getBotNumber();
+    const barbershops = await Appointment.findBybotNumber(botNumber);
+    const phone = barbershops.business_phone;
   const message = `👋 *¡Hola!*
 
 ¡Bienvenido a ${process.env.BUSINESS_NAME || 'nuestro negocio'}!
@@ -219,9 +228,8 @@ async function sendWelcomeMessage(phoneNumber) {
 1. "RESERVAR" - Instrucciones para reservar
 2. "MI TURNO" - Ver tu turno actual
 
-📞 *Teléfono:* ${process.env.BUSINESS_PHONE || 'Teléfono del negocio'}
-🌐 *Sitio web:* http://localhost:3000
-📍 *Dirección:* ${process.env.BUSINESS_ADDRESS || 'Dirección del negocio'}
+
+📞 *Teléfono:* +${phone || 'Teléfono del negocio'}
 
 ¡Estamos aquí para ayudarte! 😊`;
 
