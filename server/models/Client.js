@@ -4,7 +4,7 @@ class Client {
   static async findByPhone(phone, barbershopId) {
     const pool = getPool();
     const [rows] = await pool.execute(
-      'SELECT idclients as id, barbershop_id, name, phone, email, whatsapp, created_at, updated_at FROM clients WHERE phone = ? AND barbershop_id = ?',
+      'SELECT idclients as id, barbershop_id, name, phone, email, whatsapp, created_at, updated_at FROM clients WHERE phone = ? AND barbershop_id = ? LIMIT 1',
       [phone, barbershopId]
     );
     return rows[0] || null;

@@ -15,7 +15,7 @@ class Service {
   static async findById(id, barbershopId) {
     const pool = getPool();
     const [rows] = await pool.execute(
-      'SELECT idservices as id, barbershop_id, name, description, duration, price, is_active, created_at, updated_at FROM services WHERE idservices = ? AND barbershop_id = ?',
+      'SELECT idservices as id, barbershop_id, name, description, duration, price, is_active, created_at, updated_at FROM services WHERE idservices = ? AND barbershop_id = ? LIMIT 1',
       [id, barbershopId]
     );
     return rows[0] || null;

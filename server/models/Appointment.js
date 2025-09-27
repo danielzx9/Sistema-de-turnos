@@ -83,7 +83,7 @@ class Appointment {
       JOIN clients c ON a.client_id = c.idclients
       JOIN services s ON a.service_id = s.idservices
       LEFT JOIN barbers b ON a.barber_id = b.idbarbers
-      WHERE a.idappointments = ? AND a.barbershop_id = ?`,
+      WHERE a.idappointments = ? AND a.barbershop_id = ? LIMIT 1`,
       [id, barbershopId]
     );
     return rows[0] || null;
@@ -120,10 +120,10 @@ class Appointment {
   static async findOccupiedSlots(date, barbershopId) {
     const pool = getPool();
     const [rows] = await pool.execute(
-      'SELECT a.appointment_time, s.duration FROM appointments a JOIN services s ON a.service_id = s.idservices WHERE a.appointment_date = ? AND a.barbershop_id = ? AND a.status IN ("pending", "confirmed")',
+      'SELECT a.appointment_time, s.duration FROM appointments a JOIN services s ON a.service_id = s.idservices WHERE a.appointment_date = ? AND a.barbershop_id = ? AND a.status IN ("pending", "confirmed") LIMIT 1',
       [date, barbershopId]
     );
-    return rows;
+    return rows[0] || null;
   }
 
   static async findByPhone(phone, barbershopId) {
@@ -154,6 +154,15 @@ class Appointment {
     `, [normalizedPhone, phoneWithoutPlus, barbershopId]);
 
     return rows;
+  } 
+  
+  static async findBybotNumber(botNumberId) {
+    const pool = getPool();
+    const [rows] = await pool.execute(
+      'SELECT * FROM barbershops WHERE business_phone = ? LIMIT 1',
+      [botNumberId]
+    );
+    return rows[0] || null;
   }
 }
 

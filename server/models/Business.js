@@ -4,7 +4,7 @@ class Business {
   static async findById(id) {
     const pool = getPool();
     const [rows] = await pool.execute(
-      'SELECT idbarbershops as id, business_name, business_phone, business_address, business_email, open_time, close_time, slot_duration, working_days, created_at, updated_at FROM barbershops WHERE idbarbershops = ?',
+      'SELECT idbarbershops as id, business_name, business_phone, business_address, business_email, open_time, close_time, slot_duration, working_days, created_at, updated_at FROM barbershops WHERE idbarbershops = ? LIMIT 1',
       [id]
     );
     return rows[0] || null;

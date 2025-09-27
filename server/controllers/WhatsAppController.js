@@ -115,11 +115,14 @@ async function processIncomingMessage(message, botNumberId) {
     return;
   }
 
+  const barbershops = await Appointment.findBybotNumber(botNumberId);
+  const idbarbershops = barbershops.idbarbershops;
+
   if (text.includes('mi turno') || text === 'mi turno') {
-    await sendMyAppointment(phoneNumber, botNumberId);
+    await sendMyAppointment(phoneNumber, idbarbershops);
   } else if (text.includes('reservar') || text === 'reservar') {
     conversationManager.startReservation(phoneNumber);
-    await sendReservationStart(phoneNumber);
+    await sendReservationStart(phoneNumber, idbarbershops);
   } else {
     await sendWelcomeMessage(phoneNumber);
   }
@@ -225,9 +228,9 @@ async function sendWelcomeMessage(phoneNumber) {
   await sendWhatsAppMessage(phoneNumber, message);
 }
 
-async function sendMyAppointment(phoneNumber) {
+async function sendMyAppointment(phoneNumber, idbarbershops) {
   try {
-    const appointments = await Appointment.findByPhone(phoneNumber, 1); // Assuming barbershop_id 1
+    const appointments = await Appointment.findByPhone(phoneNumber, idbarbershops);
 
     if (appointments.length === 0) {
       await sendWhatsAppMessage(phoneNumber, `❌ *No tienes turnos activos*
@@ -262,9 +265,9 @@ Para reservar un turno:
   }
 }
 
-async function sendReservationStart(phoneNumber) {
+async function sendReservationStart(phoneNumber, idbarbershops) {
   try {
-    const services = await Service.findActiveByBarbershopId(1); // Assuming barbershop_id 1
+    const services = await Service.findActiveByBarbershopId(idbarbershops);
     let serviceList = '🎯 *¡Vamos a reservar tu turno!*\n\n*Servicios disponibles:*\n\n';
     services.forEach((service, index) => {
       serviceList += `${index + 1}. ${service.name} - $${service.price} (${service.duration} min)\n`;
