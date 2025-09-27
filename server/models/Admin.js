@@ -13,7 +13,7 @@ class Admin {
   static async findById(id) {
     const pool = getPool();
     const [rows] = await pool.execute(
-      'SELECT * FROM admins WHERE idadmins = ?',
+      'SELECT * FROM admins WHERE idadmins = ? LIMIT 1',
       [id]
     );
     return rows[0] || null;
