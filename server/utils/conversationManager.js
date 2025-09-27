@@ -1,7 +1,8 @@
 // Gestor de conversaciones para WhatsApp
 const { getPool } = require('../database/init');
-
-
+const AppointmentController = require('../controllers/AppointmentController');
+const Appointment = require('../models/Appointment');
+const BotNumberService = require('../services/BotNumberService')
 
 class ConversationManager {
   constructor() {
@@ -179,27 +180,10 @@ class ConversationManager {
     const pool = getPool();
 
     console.log(state);
-
+    const botNumber = BotNumberService.getBotNumber();
+    const barbershops = await Appointment.findBybotNumber(botNumber);
+    const idbarbershops = barbershops.idbarbershops;
     try {
-      const [rows] = await pool.execute(
-        'SELECT * FROM barbershops WHERE business_phone = ? LIMIT 1',
-        [botNumberId]
-      );
-
-      const numberBarber = rows[0]; // primer resultado del array
-
-      // Obtener configuración del negocio
-      const [configRows] = await pool.execute(
-        'SELECT * FROM barbershops WHERE idbarbershops = ?',
-        [numberBarber.idbarbershops]
-      );
-
-      if (configRows.length === 0) {
-        throw new Error('Configuración no encontrada');
-      }
-
-      const config = configRows[0];
-
       // Validar formato de hora
       const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
       if (!timeRegex.test(message)) {
@@ -212,6 +196,16 @@ class ConversationManager {
       const [hours, minutes] = message.split(':').map(Number);
       const selectedTime = new Date(state.data.date);
       selectedTime.setHours(hours, minutes, 0, 0);
+      const [configRows] = await pool.execute(
+        'SELECT * FROM barbershops WHERE idbarbershops = ?',
+        [idbarbershops]
+      );
+
+      if (configRows.length === 0) {
+        throw new Error('Configuración no encontrada');
+      }
+
+      const config = configRows[0];
 
       // Verificar que esté dentro del horario de atención
       const [openHour, openMin] = config.open_time.split(':').map(Number);
@@ -232,14 +226,12 @@ class ConversationManager {
 
       // Verificar disponibilidad
       const dateStr = state.data.date.toISOString().split('T')[0];
-      const availableSlots = await this.getAvailableSlots(dateStr, state.data.service.idservices, botNumberId);
-
-      const isAvailable = availableSlots.some(slot => slot.time === message);
+      const isAvailable = await AppointmentController.isSlotAvailable(dateStr, message, idbarbershops);
 
       if (!isAvailable) {
         return {
           action: 'send_message',
-          message: `❌ *Horario no disponible*\n\nEl horario ${message} no está disponible para el ${dateStr}.\n\n*Horarios disponibles:*\n${availableSlots.slice(0, 5).map(slot => `• ${slot.time}`).join('\n')}\n\nPor favor, selecciona uno de estos horarios.`
+          message: `❌ *Horario no disponible*\n\nEl horario ${message} no está disponible para el ${dateStr}.`
         };
       }
       this.setConversationState(phoneNumber, {
@@ -262,38 +254,35 @@ class ConversationManager {
     }
   }
 
-
-  // Manejar confirmación de teléfono
-  async handlePhoneConfirmation(phoneNumber, message) {
-    const state = this.getConversationState(phoneNumber);
-    this.setConversationState(phoneNumber, {
-      step: 'final_confirmation',
-      data: { ...state.data, time: message }
-    });
-    const dateStr = state.data.date.toLocaleDateString('es-ES');
-    const horaStr = state.data.time;
-    console.log('jaja' + horaStr);
-    return {
-      action: 'send_message',
-      message: `📋 *Resumen de tu reserva:*\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${dateStr}\n*Hora:* ${horaStr}\n*Teléfono:* ${phoneNumber}\n*Precio:* $${state.data.service.price}\n\n¿Confirmas esta reserva?\n\nEscribe:\n• "SI" para confirmar\n• "NO" para cancelar`
-    };
-  }
-
   // Manejar confirmación final
   async handleFinalConfirmation(phoneNumber, message) {
     const state = this.getConversationState(phoneNumber);
-
+    const botNumber = BotNumberService.getBotNumber();
+    const barbershops = await Appointment.findBybotNumber(botNumber);
+    const idbarbershops = barbershops.idbarbershops;
     if (message.toLowerCase() === 'si' || message.toLowerCase() === 'sí') {
       try {
+        const dateISO = state.data.date.toISOString().split('T')[0];
+        const timeStr = state.data.time;
+        const appointmentDateTime = `${dateISO} ${timeStr}:00`;
         // Crear la reserva en la base de datos
-        const result = await this.createAppointment(state.data, phoneNumber);
+        await AppointmentController.create({
+          clientName: phoneNumber,
+          clientPhone: phoneNumber,
+          clientEmail: null,
+          serviceId: state.data.service.idservices,
+          appointmentDate: dateISO,
+          appointmentTime: appointmentDateTime,
+          notes: '',
+          barbershopId: idbarbershops,
+          barberId: state.data.barberId || null
+        });
 
         this.clearConversation(phoneNumber);
-        const horaStr = state.data.time;
 
         return {
           action: 'send_message',
-          message: `🎉 *¡Reserva Confirmada!*\n\nTu turno ha sido reservado exitosamente:\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${state.data.date.toLocaleDateString('es-ES')}\n*Hora:* ${horaStr}\n*Precio:* $${state.data.service.price}\n\nTe enviaremos una confirmación por WhatsApp.\n\n¡Te esperamos! 😊`
+          message: `🎉 *¡Reserva Confirmada!*\n\nTu turno ha sido reservado exitosamente:\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${state.data.date.toLocaleDateString('es-ES')}\n*Hora:* ${timeStr}\n*Precio:* $${state.data.service.price}\n\nTe enviaremos una confirmación por WhatsApp.\n\n¡Te esperamos! 😊`
         };
       } catch (error) {
         console.error('Error al crear reserva:', error);
@@ -306,165 +295,6 @@ class ConversationManager {
         action: 'send_message',
         message: '❌ *Reserva cancelada*\n\nNo se realizó la reserva. Si cambias de opinión, escribe "RESERVAR" para empezar de nuevo.\n\n¡Gracias por tu interés! 😊'
       };
-    }
-  }
-
-  // Obtener slots disponibles
-  async getAvailableSlots(date, serviceId, botNumberId) {
-    const pool = getPool();
-
-    try {
-      const [rows] = await pool.execute(
-        'SELECT * FROM barbershops WHERE business_phone = ? LIMIT 1',
-        [botNumberId]
-      );
-
-      const numberBarber = rows[0]; // primer resultado del array
-
-      // Obtener configuración del negocio
-      const [configRows] = await pool.execute(
-        'SELECT * FROM barbershops WHERE idbarbershops = ?',
-        [numberBarber.idbarbershops]
-      );
-
-
-      if (configRows.length === 0) {
-        throw new Error('Configuración no encontrada');
-      }
-
-      const config = configRows[0];
-
-      // Obtener duración del servicio
-      const [serviceRows] = await pool.execute(
-        'SELECT duration FROM services WHERE idservices = ? AND is_active = 1 AND barbershop_id = ?',
-        [serviceId, numberBarber.idbarbershops]
-      );
-
-      console.log("configRows:", JSON.stringify(serviceRows, null, 2));
-      console.log("Length:", serviceRows.length);
-
-      if (serviceRows.length === 0) {
-        throw new Error('Servicio no encontrado');
-      }
-
-
-      const service = serviceRows[0];
-
-      // Obtener turnos ocupados para esa fecha
-      const [occupiedSlots] = await pool.execute(
-        'SELECT a.appointment_time, s.duration FROM appointments a JOIN services s ON a.service_id = s.idservices WHERE a.appointment_date = ? AND a.barbershop_id = ? AND a.status IN ("pending", "confirmed")',
-        [date, numberBarber.idbarbershops]
-      );
-
-      // Generar slots disponibles
-      const availableSlots = this.generateAvailableSlots(
-        config.open_time,
-        config.close_time,
-        config.slot_duration,
-        service.duration,
-        occupiedSlots
-      );
-
-      return availableSlots;
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  // Generar slots disponibles
-  generateAvailableSlots(openTime, closeTime, slotDuration, serviceDuration, occupiedSlots) {
-    const slots = [];
-    const moment = require('moment');
-
-    const open = moment(openTime, 'HH:mm');
-    const close = moment(closeTime, 'HH:mm');
-
-    // Convertir slots ocupados a momentos
-    const occupied = occupiedSlots.map(slot => ({
-      start: moment(slot.appointment_time, 'HH:mm'),
-      end: moment(slot.appointment_time, 'HH:mm').add(slot.duration, 'minutes')
-    }));
-
-    let current = open.clone();
-    while (current.isBefore(close)) {
-      const slotStart = current.clone();
-      const slotEnd = current.clone().add(serviceDuration, 'minutes');
-
-      // El slot debe terminar antes o justo al cierre
-      if (slotEnd.isAfter(close)) {
-        break;
-      }
-
-      // Verificar si el slot está ocupado
-      const isOccupied = occupied.some(occ =>
-        slotStart.isBefore(occ.end) && slotEnd.isAfter(occ.start)
-      );
-
-      if (!isOccupied) {
-        slots.push({
-          time: slotStart.format('HH:mm'),
-          available: true
-        });
-      }
-
-      current.add(slotDuration, 'minutes');
-    }
-
-    return slots;
-  }
-
-  // Crear cita en la base de datos
-  async createAppointment(data, phoneNumber) {
-    const pool = getPool();
-
-    try {
-
-
-      // Buscar o crear cliente
-      const [clientRows] = await pool.execute(
-        'SELECT idclients FROM clients WHERE phone = ? AND barbershop_id = ?',
-        [phoneNumber, data.service.barbershop_id]
-      );
-
-      console.log("configRows:", JSON.stringify(clientRows, null, 2));
-      console.log("Length:", clientRows.length);
-
-      let clientId;
-      if (clientRows.length > 0) {
-        clientId = clientRows[0].idclients;
-        // Actualizar datos del cliente
-        await pool.execute(
-          'UPDATE clients SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE idclients = ?',
-          [phoneNumber, clientId]
-        );
-      } else {
-        // Crear nuevo cliente
-        const [clientResult] = await pool.execute(
-          'INSERT INTO clients (barbershop_id, name, phone) VALUES (?, ?, ?)',
-          [data.service.barbershop_id, phoneNumber, phoneNumber]
-        );
-        clientId = clientResult.insertId;
-      }
-
-      const datePart = data.date.toISOString().split("T")[0];
-
-      const timePart = data.time.length === 5
-        ? data.time + ":00"   // si viene "10:00" -> "10:00:00"
-        : data.time;          // si ya viene con segundos
-
-      const dateTimeValue = `${datePart} ${timePart}`;
-      // 👉 "2025-09-22 10:00:00"
-
-
-      // Crear turno
-      const [appointmentResult] = await pool.execute(
-        'INSERT INTO appointments (client_id, service_id, barbershop_id, appointment_date, appointment_time, status) VALUES (?, ?, ?, ?, ?, ?)',
-        [clientId, data.service.idservices, data.service.barbershop_id, datePart, dateTimeValue, 'pending']
-      );
-
-      return { appointmentId: appointmentResult.insertId };
-    } catch (error) {
-      throw error;
     }
   }
 }
