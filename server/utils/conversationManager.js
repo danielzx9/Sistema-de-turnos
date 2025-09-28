@@ -42,6 +42,21 @@ class ConversationManager {
     });
   }
 
+// REVISAR SI YA TIENE TURNOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
+  async checkExistingAppointment(clientId) {
+    const hasPending = await Appointment.findByIdClient(clientId);
+  
+    if (hasPending) {
+      return {
+        action: 'send_message',
+        message: '⚠️ Ya tienes un turno pendiente.\n\nPor favor finaliza o cancela ese turno antes de solicitar otro.'
+      };
+    }
+  
+    // Si no tiene turno pendiente, seguimos normal
+    return null;
+  }
+
   // Procesar respuesta del usuario
   async processUserResponse(phoneNumber, message, botNumberId) {
     const state = this.getConversationState(phoneNumber);

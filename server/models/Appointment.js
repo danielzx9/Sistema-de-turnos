@@ -154,12 +154,32 @@ class Appointment {
     `, [normalizedPhone, phoneWithoutPlus, barbershopId]);
 
     return rows;
-  } 
-  
+  }
+
   static async findBybotNumber(botNumberId) {
     const pool = getPool();
     const [rows] = await pool.execute(
       'SELECT * FROM barbershops WHERE business_phone = ? LIMIT 1',
+      [botNumberId]
+    );
+    return rows[0] || null;
+  }
+
+  //Encontrar si el cliente tiene un turno pendiente 
+  static async findByIdClient(IdClient) {
+    const pool = getPool();
+    const [rows] = await pool.execute(
+      `SELECT 1 FROM appointments WHERE client_id = ? AND status = 'pending' OR status = 'confirmed' LIMIT 1`,
+      [IdClient]
+    );
+    return rows.length > 0;
+  }
+
+  //encontrar el cliente por su numero de telefono
+  static async findAppointmentByClientId(botNumberId) {
+    const pool = getPool();
+    const [rows] = await pool.execute(
+      `SELECT idclients FROM clients WHERE phone = ? LIMIT 1`,
       [botNumberId]
     );
     return rows[0] || null;

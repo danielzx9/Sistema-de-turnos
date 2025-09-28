@@ -34,7 +34,15 @@ class WhatsAppController {
             const metadata = change.value?.metadata || {};
             const messages = change.value.messages;
             const botNumber = metadata.display_phone_number;
+
+            const waId = change.value?.contacts?.[0]?.wa_id;
+
+            BotNumberService.setPhoneNumberClient(waId);
+
+
             BotNumberService.setBotNumber(botNumber);
+
+
             if (messages) {
               messages.forEach(message => {
                 processIncomingMessage(message, botNumber);
@@ -122,7 +130,29 @@ async function processIncomingMessage(message, botNumberId) {
 
   if (text.includes('mi turno') || text === 'mi turno') {
     await sendMyAppointment(phoneNumber, idbarbershops);
+
   } else if (text.includes('reservar') || text === 'reservar') {
+
+    const waId = message.from; // este es el número del cliente en WhatsApp
+
+    // Buscar cliente en la BD por wa_id o phone
+    const client = await Appointment.findAppointmentByClientId(waId);
+    if (!client) {
+      await sendWhatsAppMessage(phoneNumber, '❌ No encontramos tu registro como cliente. Por favor contacta al negocio.');
+      return;
+    }
+
+    const idClient = client.idclients;
+    BotNumberService.setIdClient(idClient);
+
+    // Verificar si ya tiene un turno pendiente
+    const hasPending = await conversationManager.checkExistingAppointment(idClient);
+
+    if (hasPending) {
+      await sendWhatsAppMessage(phoneNumber, '⚠️ Ya tienes un turno pendiente. Por favor cancélalo o espera a que termine antes de pedir otro.');
+      return;
+    }
+
     conversationManager.startReservation(phoneNumber);
     await sendReservationStart(phoneNumber, idbarbershops);
   } else {
@@ -217,9 +247,9 @@ Si necesitas cancelar o reprogramar, contáctanos lo antes posible.`;
 
 async function sendWelcomeMessage(phoneNumber) {
 
-    const botNumber = BotNumberService.getBotNumber();
-    const barbershops = await Appointment.findBybotNumber(botNumber);
-    const phone = barbershops.business_phone;
+  const botNumber = BotNumberService.getBotNumber();
+  const barbershops = await Appointment.findBybotNumber(botNumber);
+  const phone = barbershops.business_phone;
   const message = `👋 *¡Hola!*
 
 ¡Bienvenido a ${process.env.BUSINESS_NAME || 'nuestro negocio'}!
