@@ -148,9 +148,7 @@ class ConversationManager {
 
     // Procesar diferentes formatos de fecha
     if (message.toLowerCase().includes('mañana')) {
-      console.log('++++++++++++++++++++++' + today);
       selectedDate = new Date(today.getTime() + 24 * 60 * 60 * 1000);
-      console.log('++++++++++++++++++++++' + selectedDate);
     } else {
       // Intentar parsear fecha DD/MM/AAAA
       const parts = message.split('/');
