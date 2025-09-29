@@ -134,23 +134,21 @@ async function processIncomingMessage(message, botNumberId) {
   } else if (text.includes('reservar') || text === 'reservar') {
 
     const waId = message.from; // este es el número del cliente en WhatsApp
-
+    const hahja = BotNumberService.getPhoneNumberClient();
+    console.log('****************' + hahja);
     // Buscar cliente en la BD por wa_id o phone
     const client = await Appointment.findAppointmentByClientId(waId);
-    if (!client) {
-      await sendWhatsAppMessage(phoneNumber, '❌ No encontramos tu registro como cliente. Por favor contacta al negocio.');
-      return;
-    }
+    if (client) {
+      const idClient = client.idclients;
+      BotNumberService.setIdClient(idClient);
 
-    const idClient = client.idclients;
-    BotNumberService.setIdClient(idClient);
+      // Verificar si ya tiene un turno pendiente
+      const hasPending = await conversationManager.checkExistingAppointment(idClient);
 
-    // Verificar si ya tiene un turno pendiente
-    const hasPending = await conversationManager.checkExistingAppointment(idClient);
-
-    if (hasPending) {
-      await sendWhatsAppMessage(phoneNumber, '⚠️ Ya tienes un turno pendiente. Por favor cancélalo o espera a que termine antes de pedir otro.');
-      return;
+      if (hasPending) {
+        await sendWhatsAppMessage(phoneNumber, '⚠️ Ya tienes un turno pendiente. Por favor cancélalo o espera a que termine antes de pedir otro.');
+        return;
+      }
     }
 
     conversationManager.startReservation(phoneNumber);

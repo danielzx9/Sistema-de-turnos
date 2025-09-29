@@ -42,17 +42,17 @@ class ConversationManager {
     });
   }
 
-// REVISAR SI YA TIENE TURNOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
+  // REVISAR SI YA TIENE TURNOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
   async checkExistingAppointment(clientId) {
     const hasPending = await Appointment.findByIdClient(clientId);
-  
+
     if (hasPending) {
       return {
         action: 'send_message',
         message: '⚠️ Ya tienes un turno pendiente.\n\nPor favor finaliza o cancela ese turno antes de solicitar otro.'
       };
     }
-  
+
     // Si no tiene turno pendiente, seguimos normal
     return null;
   }
@@ -118,7 +118,7 @@ class ConversationManager {
 
         return {
           action: 'send_message',
-          message: `✅ *Servicio seleccionado:* ${selectedService.name}\n\n📅 *¿Para qué fecha quieres el turno?*\n\nEscribe la fecha en formato DD/MM/AAAA\n\n*Ejemplos:*\n• 15/09/2024\n• 20/09/2024\n• mañana\n• pasado mañana`
+          message: `✅ *Servicio seleccionado:* ${selectedService.name}\n\n📅 *¿Para qué fecha quieres el turno?*\n\nEscribe la fecha en formato DD/MM/AAAA\n\n*Ejemplos:*\n• 15/09/2024\n• 20/09/2024\n• mañana`
         };
       } else {
         let serviceList = '*Servicios disponibles:*\n\n';
@@ -148,9 +148,9 @@ class ConversationManager {
 
     // Procesar diferentes formatos de fecha
     if (message.toLowerCase().includes('mañana')) {
+      console.log('++++++++++++++++++++++' + today);
       selectedDate = new Date(today.getTime() + 24 * 60 * 60 * 1000);
-    } else if (message.toLowerCase().includes('pasado mañana')) {
-      selectedDate = new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000);
+      console.log('++++++++++++++++++++++' + selectedDate);
     } else {
       // Intentar parsear fecha DD/MM/AAAA
       const parts = message.split('/');
@@ -166,15 +166,6 @@ class ConversationManager {
       return {
         action: 'send_message',
         message: '❌ *Fecha inválida*\n\nPor favor, escribe una fecha válida:\n• DD/MM/AAAA (ej: 15/09/2024)\n• mañana\n• pasado mañana'
-      };
-    }
-
-    // Verificar que sea día laboral (lunes a viernes)
-    const dayOfWeek = selectedDate.getDay();
-    if (dayOfWeek === 0 || dayOfWeek === 6) { // 0 = domingo, 6 = sábado
-      return {
-        action: 'send_message',
-        message: '❌ *No atendemos los fines de semana*\n\nPor favor, selecciona un día de lunes a viernes.'
       };
     }
 
@@ -277,8 +268,20 @@ class ConversationManager {
     const idbarbershops = barbershops.idbarbershops;
     if (message.toLowerCase() === 'si' || message.toLowerCase() === 'sí') {
       try {
-        const dateISO = state.data.date.toISOString().split('T')[0];
+        const datesr = new Date(state.data.date);
+        const dateISO = datesr.getFullYear() + '-' +
+          String(datesr.getMonth() + 1).padStart(2, '0') + '-' +
+          String(datesr.getDate()).padStart(2, '0');
         const timeStr = state.data.time;
+        const isAvailable = await AppointmentController.isSlotAvailable(dateISO, timeStr, idbarbershops);
+
+        if (!isAvailable) {
+          this.clearConversation(phoneNumber);
+          return {
+            action: 'restart',
+            message: `❌ *Horario no disponible*\n\nEl horario ${timeStr} no está disponible para el ${dateISO}. Por favor inicie nuevamente la reserva`
+          };
+        }
         const appointmentDateTime = `${dateISO} ${timeStr}:00`;
         // Crear la reserva en la base de datos
         await AppointmentController.create({
