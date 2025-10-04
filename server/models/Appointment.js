@@ -169,10 +169,10 @@ class Appointment {
   static async findByIdClient(IdClient) {
     const pool = getPool();
     const [rows] = await pool.execute(
-      `SELECT 1 FROM appointments WHERE client_id = ? AND status = 'pending' OR status = 'confirmed' LIMIT 1`,
+      `SELECT 1 FROM appointments WHERE client_id = ? AND status = 'pending' OR status = 'confirmed'`,
       [IdClient]
     );
-    return rows.length > 0;
+    return rows;
   }
 
   //encontrar el cliente por su numero de telefono
