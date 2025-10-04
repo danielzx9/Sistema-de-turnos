@@ -4,6 +4,30 @@ const AppointmentController = require('../controllers/AppointmentController');
 const Appointment = require('../models/Appointment');
 const BotNumberService = require('../services/BotNumberService')
 
+// --- NUEVAS FUNCIONES AUXILIARES ---
+
+/**
+ * Convierte un string de tiempo "HH:MM" a minutos desde la medianoche.
+ * @param {string} timeStr - Ejemplo: "09:30"
+ * @returns {number} - Ejemplo: 570
+ */
+const timeToMinutes = (timeStr) => {
+  if (!timeStr || !timeStr.includes(':')) return 0;
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  return hours * 60 + minutes;
+};
+
+/**
+ * Convierte minutos desde la medianoche a un string de tiempo "HH:MM".
+ * @param {number} totalMinutes - Ejemplo: 570
+ * @returns {string} - Ejemplo: "09:30"
+ */
+const minutesToTime = (totalMinutes) => {
+  const hours = Math.floor(totalMinutes / 60).toString().padStart(2, '0');
+  const minutes = (totalMinutes % 60).toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
+
 class ConversationManager {
   constructor() {
     this.conversations = new Map(); // phoneNumber -> conversationState
@@ -248,12 +272,57 @@ class ConversationManager {
       const dateStr = selectedDate.toISOString().split("T")[0]; // "YYYY-MM-DD"
       const timeStr = horaTexto; // "HH:MM"
   
+      // (Aquí asumimos que la duración fija es de 30 minutos como mencionaste)
+      const serviceDuration = 30;
       const isAvailable = await AppointmentController.isSlotAvailable(dateStr, timeStr, idbarbershops);
+
+      
       if (!isAvailable) {
+        // --- INICIO DE LA NUEVA LÓGICA PARA SUGERIR HORARIOS ---
+
+        // 1. Obtenemos todos los turnos ya ocupados para ese día.
+        const occupiedSlots = await Appointment.getOccupiedSlotsByDate(dateStr, idbarbershops);
+        const occupiedTimes = new Set(occupiedSlots.map(slot => slot.appointment_time));
+
+        // 2. Definimos el rango de trabajo en minutos.
+        const openTimeMinutes = timeToMinutes(config.open_time);
+        const closeTimeMinutes = timeToMinutes(config.close_time);
+        
+        const availableSlots = [];
+        const interval = 30; // Intervalo de 30 minutos
+
+        // 3. Generamos todos los horarios posibles y filtramos los disponibles.
+        for (let i = openTimeMinutes; i < closeTimeMinutes; i += interval) {
+          const potentialTime = minutesToTime(i);
+          
+          // Un horario está disponible si NO está en la lista de ocupados.
+          if (!occupiedTimes.has(potentialTime)) {
+            // Si es hoy, nos aseguramos de no mostrar horarios que ya pasaron.
+            const potentialDate = new Date(`${dateStr}T${potentialTime}`);
+            if (diff === 0 && potentialDate < new Date()) {
+                continue; // Saltar este horario porque ya pasó
+            }
+            availableSlots.push(potentialTime);
+          }
+        }
+
+        // 4. Construimos el mensaje de respuesta.
+        let responseMessage = `❌ *El turno de las ${timeStr} no está disponible.*\n\n`;
+
+        if (availableSlots.length > 0) {
+          responseMessage += `Estos son los horarios libres para el *${diaTexto}*:\n\n`;
+          // Formateamos la lista para que sea fácil de leer en WhatsApp
+          responseMessage += availableSlots.map(slot => `✅ *${slot}*`).join('\n');
+          responseMessage += `\n\nPor favor, elige uno de los horarios disponibles.`;
+        } else {
+          responseMessage += `Lo sentimos, no quedan más turnos disponibles para el *${diaTexto}*.`;
+        }
+
         return {
           action: "send_message",
-          message: `❌ *Horario no disponible*\n\nEl horario ${timeStr} ya está ocupado para el ${dateStr}.`
+          message: responseMessage
         };
+        // --- FIN DE LA NUEVA LÓGICA ---
       }
   
       // ------------------------------------------------------------
