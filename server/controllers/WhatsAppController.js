@@ -57,6 +57,7 @@ class WhatsAppController {
   }
 
   static async sendConfirmation(req, res) {
+    console.log('📨 Llamada a sendConfirmation:', req.body);
     const { appointmentId, phoneNumber } = req.body;
 
     if (!appointmentId || !phoneNumber) {
@@ -70,6 +71,30 @@ class WhatsAppController {
       }
 
       const message = generateConfirmationMessage(appointment);
+      await sendWhatsAppMessage(phoneNumber, message);
+
+      res.json({ message: 'Mensaje de confirmación enviado exitosamente' });
+    } catch (error) {
+      console.error('Error al enviar confirmación:', error);
+      res.status(500).json({ error: 'Error al enviar mensaje' });
+    }
+  }
+
+  static async sendCancelled(req, res) {
+    console.log('📨 Llamada a sendCancelled:', req.body);
+    const { appointmentId, phoneNumber } = req.body;
+
+    if (!appointmentId || !phoneNumber) {
+      return res.status(400).json({ error: 'ID de turno y número de teléfono son requeridos' });
+    }
+
+    try {
+      const appointment = await getAppointmentDetails(appointmentId);
+      if (!appointment) {
+        return res.status(404).json({ error: 'Turno no encontrado' });
+      }
+
+      const message = generateCancelledMessage(appointment);
       await sendWhatsAppMessage(phoneNumber, message);
 
       res.json({ message: 'Mensaje de confirmación enviado exitosamente' });
@@ -135,13 +160,14 @@ async function processIncomingMessage(message, botNumberId) {
 
     const waId = message.from; // este es el número del cliente en WhatsApp
     const hahja = BotNumberService.getPhoneNumberClient();
+    console.log('****************' + waId);
     console.log('****************' + hahja);
     // Buscar cliente en la BD por wa_id o phone
-    const client = await Appointment.findAppointmentByClientId(waId);
+    const client = await Appointment.findAppointmentByClientId(hahja);
     if (client) {
       const idClient = client.idclients;
       BotNumberService.setIdClient(idClient);
-
+      console.log('****************' + idClient);
       // Verificar si ya tiene un turno pendiente
       const hasPending = await conversationManager.checkExistingAppointment(idClient);
 
@@ -221,6 +247,26 @@ Hola ${appointment.client_name}, tu turno ha sido confirmado:
 📞 ${process.env.BUSINESS_PHONE || 'Teléfono del negocio'}
 
 *Importante:* Si necesitas cancelar o reprogramar, contáctanos con al menos 2 horas de anticipación.`;
+}
+
+function generateCancelledMessage(appointment) {
+  const date = new Date(appointment.appointment_date).toLocaleDateString('es-ES');
+  const time = appointment.appointment_time;
+
+  return `❌ ¡Turno Cancelado! ❌
+
+Hola ${appointment.client_name}, lamentamos informarte que tu turno ha sido cancelado.
+
+📅 *Fecha:* ${date}
+🕐 *Hora:* ${time}
+💇 *Servicio:* ${appointment.service_name}
+⏱️ *Duración:* ${appointment.service_duration} minutos
+💰 *Precio:* $${appointment.service_price}
+
+📍 ${process.env.BUSINESS_ADDRESS || 'Dirección del negocio'}
+📞 ${process.env.BUSINESS_PHONE || 'Teléfono del negocio'}
+
+Si deseas reprogramar tu cita, puedes comunicarte con nosotros. ¡Gracias por tu comprensión! 🙏`;
 }
 
 function generateReminderMessage(appointment) {

@@ -16,4 +16,6 @@ router.post('/send-confirmation', authenticateToken, WhatsAppController.sendConf
 // Enviar recordatorio de turno
 router.post('/send-reminder', authenticateToken, WhatsAppController.sendReminder);
 
+router.post('/send-cancelled', authenticateToken, WhatsAppController.sendCancelled);
+
 module.exports = router;
