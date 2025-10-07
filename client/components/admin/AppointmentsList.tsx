@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Calendar, Clock, User, Phone, Mail, MoreVertical, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { sendConfirmation, sendCancelled } from '@/lib/api'
 
 interface Appointment {
   id: number
@@ -36,10 +37,10 @@ export default function AppointmentsList() {
     try {
       const token = localStorage.getItem('admin_token')
       const params = new URLSearchParams()
-      
+
       if (filters.date) params.append('date', filters.date)
       if (filters.status) params.append('status', filters.status)
-      
+
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL}/appointments?${params}`,
         {
@@ -48,7 +49,7 @@ export default function AppointmentsList() {
           }
         }
       )
-      
+
       if (response.ok) {
         const data = await response.json()
         setAppointments(data)
@@ -60,7 +61,7 @@ export default function AppointmentsList() {
     }
   }
 
-  const updateAppointmentStatus = async (id: number, status: string) => {
+  const updateAppointmentStatus = async (id: number, phoneNumber: string, status: string) => {
     try {
       const token = localStorage.getItem('admin_token')
       const response = await fetch(
@@ -74,15 +75,32 @@ export default function AppointmentsList() {
           body: JSON.stringify({ status })
         }
       )
-      
+      console.log(id);
+
       if (response.ok) {
         // Actualizar el estado local
-        setAppointments(prev => 
-          prev.map(apt => 
+        
+        setAppointments(prev =>
+          prev.map(apt =>
             apt.id === id ? { ...apt, status: status as any } : apt
           )
         )
+
+        if (status === 'confirmed') {
+
+          await sendConfirmation(id, phoneNumber)
+          console.log('✅ Mensaje de confirmación enviado a WhatsApp')
+  
+        }
+        if (status === 'cancelled') {
+
+          await sendCancelled(id, phoneNumber)
+          console.log('✅ Mensaje de cancelacion enviado a WhatsApp')
+  
+        }
       }
+
+      
     } catch (error) {
       console.error('Error al actualizar turno:', error)
     }
@@ -152,7 +170,7 @@ export default function AppointmentsList() {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Gestión de Turnos</h2>
-        
+
         <div className="flex space-x-4">
           <input
             type="date"
@@ -203,7 +221,7 @@ export default function AppointmentsList() {
                         {appointment.appointment_time}
                       </div>
                     </div>
-                    
+
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
                         <h4 className="font-medium text-gray-900 flex items-center">
@@ -221,7 +239,7 @@ export default function AppointmentsList() {
                           </div>
                         )}
                       </div>
-                      
+
                       <div>
                         <h5 className="font-medium text-gray-900">{appointment.service_name}</h5>
                         <p className="text-sm text-gray-600">
@@ -231,7 +249,7 @@ export default function AppointmentsList() {
                           Precio: ${appointment.service_price}
                         </p>
                       </div>
-                      
+
                       {appointment.notes && (
                         <div>
                           <h5 className="font-medium text-gray-900">Notas</h5>
@@ -240,34 +258,34 @@ export default function AppointmentsList() {
                       )}
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center space-x-2">
                     {appointment.status === 'pending' && (
                       <>
                         <button
-                          onClick={() => updateAppointmentStatus(appointment.id, 'confirmed')}
+                          onClick={() => updateAppointmentStatus(appointment.id, appointment.client_phone, 'confirmed')}
                           className="btn-success text-xs px-3 py-1"
                         >
                           Confirmar
                         </button>
                         <button
-                          onClick={() => updateAppointmentStatus(appointment.id, 'cancelled')}
+                          onClick={() => updateAppointmentStatus(appointment.id, appointment.client_phone, 'cancelled')}
                           className="btn-danger text-xs px-3 py-1"
                         >
                           Cancelar
                         </button>
                       </>
                     )}
-                    
+
                     {appointment.status === 'confirmed' && (
                       <button
-                        onClick={() => updateAppointmentStatus(appointment.id, 'completed')}
+                        onClick={() => updateAppointmentStatus(appointment.id, appointment.client_phone, 'completed')}
                         className="btn-success text-xs px-3 py-1"
                       >
                         Completar
                       </button>
                     )}
-                    
+
                     <button className="text-gray-400 hover:text-gray-600">
                       <MoreVertical className="h-4 w-4" />
                     </button>

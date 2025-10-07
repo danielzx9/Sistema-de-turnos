@@ -171,7 +171,7 @@ class Appointment {
   static async findByIdClient(IdClient) {
     const pool = getPool();
     const [rows] = await pool.execute(
-      `SELECT 1 FROM appointments WHERE client_id = ? AND status = 'pending' OR status = 'confirmed'`,
+      `SELECT * FROM appointments WHERE client_id = ? AND (status = 'pending' OR status = 'confirmed')`,
       [IdClient]
     );
     return rows;
