@@ -57,6 +57,7 @@ class WhatsAppController {
   }
 
   static async sendConfirmation(req, res) {
+    console.log('📨 Llamada a sendConfirmation:', req.body);
     const { appointmentId, phoneNumber } = req.body;
 
     if (!appointmentId || !phoneNumber) {
@@ -76,6 +77,120 @@ class WhatsAppController {
     } catch (error) {
       console.error('Error al enviar confirmación:', error);
       res.status(500).json({ error: 'Error al enviar mensaje' });
+    }
+  }
+
+  static async sendCancelled(req, res) {
+    console.log('📨 Llamada a sendCancelled:', req.body);
+    const { appointmentId, phoneNumber } = req.body;
+
+    if (!appointmentId || !phoneNumber) {
+      return res.status(400).json({ error: 'ID de turno y número de teléfono son requeridos' });
+    }
+
+    try {
+      const appointment = await getAppointmentDetails(appointmentId);
+      if (!appointment) {
+        return res.status(404).json({ error: 'Turno no encontrado' });
+      }
+
+      const message = generateCancelledMessage(appointment);
+      await sendWhatsAppMessage(phoneNumber, message);
+
+      res.json({ message: 'Mensaje de confirmación enviado exitosamente' });
+    } catch (error) {
+      console.error('Error al enviar confirmación:', error);
+      res.status(500).json({ error: 'Error al enviar mensaje' });
+    }
+  }
+
+  static async cancelMyAppointment(phoneNumber, message, idbarbershops) {
+    try {
+      // ------------------------------------------------------------
+      // 1️⃣ Detectar cuál turno desea cancelar (1 o 2)
+      // ------------------------------------------------------------
+      const regex = /cancelar\s*(\d)?/i;
+      const match = message.match(regex);
+
+      if (!match) {
+        await sendWhatsAppMessage(phoneNumber, `❌ *Formato inválido*  
+  Por favor indica el número del turno que deseas cancelar.  
+  
+  Ejemplo:
+  • CANCELAR 1  
+  • CANCELAR 2`);
+        return;
+      }
+
+      const appointmentIndex = match[1] ? parseInt(match[1], 10) - 1 : null;
+
+      // ------------------------------------------------------------
+      // 2️⃣ Obtener los turnos activos del cliente
+      // ------------------------------------------------------------
+      const appointments = await Appointment.findByPhone(phoneNumber, idbarbershops);
+
+      if (appointments.length === 0) {
+        await sendWhatsAppMessage(phoneNumber, `❌ *No tienes turnos activos para cancelar.*`);
+        return;
+      }
+
+      // ------------------------------------------------------------
+      // 3️⃣ Validar índice
+      // ------------------------------------------------------------
+      if (appointmentIndex === null || appointmentIndex < 0 || appointmentIndex >= appointments.length) {
+        let msg = `📅 *Tus Turnos Activos*\n\n`;
+        appointments.forEach((apt, index) => {
+          const date = new Date(apt.appointment_date).toLocaleDateString('es-ES');
+          const timeStr = new Date(apt.appointment_time).toLocaleTimeString('es-ES', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+            timeZone: 'America/Bogota'
+          });
+          msg += `${index + 1}. *${apt.service_name}* - ${date} ${timeStr}\n`;
+        });
+        msg += `\nPor favor indica el número del turno a cancelar.\nEjemplo: CANCELAR 1`;
+
+        await sendWhatsAppMessage(phoneNumber, msg);
+        return;
+      }
+
+      // ------------------------------------------------------------
+      // 4️⃣ Cancelar el turno usando Appointment.delete()
+      // ------------------------------------------------------------
+      const selectedAppointment = appointments[appointmentIndex];
+      const deleted = await Appointment.delete(selectedAppointment.id, idbarbershops);
+
+      if (!deleted) {
+        await sendWhatsAppMessage(phoneNumber, `⚠️ No se pudo cancelar el turno seleccionado.`);
+        return;
+      }
+
+      // ------------------------------------------------------------
+      // 5️⃣ Enviar confirmación al cliente
+      // ------------------------------------------------------------
+      const date = new Date(selectedAppointment.appointment_date).toLocaleDateString('es-ES');
+      const timeStr = new Date(selectedAppointment.appointment_time).toLocaleTimeString('es-ES', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'America/Bogota'
+      });
+
+      const cancelMsg = `❌ *Turno Cancelado*  
+  Tu turno fue eliminado correctamente:  
+  
+  📅 *Fecha:* ${date}  
+  🕐 *Hora:* ${timeStr}  
+  💇 *Servicio:* ${selectedAppointment.service_name}  
+  💰 *Precio:* $${selectedAppointment.price}
+  
+  Puedes escribir *RESERVAR* si deseas agendar un nuevo turno.`;
+
+      await sendWhatsAppMessage(phoneNumber, cancelMsg);
+    } catch (error) {
+      console.error('Error al cancelar turno:', error);
+      await sendWhatsAppMessage(phoneNumber, `⚠️ Error al cancelar el turno. Por favor intenta nuevamente o contáctanos.`);
     }
   }
 
@@ -103,10 +218,14 @@ class WhatsAppController {
   }
 }
 
+
+
 // Helper functions
 async function processIncomingMessage(message, botNumberId) {
   const phoneNumber = message.from;
   const messageText = message.text?.body || '';
+  const message1 = message.text.body
+  //console.log(message.text.body);
 
   console.log(`Mensaje recibido de ${phoneNumber}: ${messageText}`);
 
@@ -122,6 +241,18 @@ async function processIncomingMessage(message, botNumberId) {
     } else if (response.action === 'restart') {
       await sendWhatsAppMessage(phoneNumber, response.message);
     }
+    if (response.action === 'call_cancel') {
+      // obtenemos idbarbershops igual que en el resto del flujo
+      const barbershops = await Appointment.findBybotNumber(botNumberId);
+      const idbarbershops = barbershops.idbarbershops;
+
+      // Asegúrate que cancelMyAppointment sea STATIC en la clase WhatsAppController
+      await WhatsAppController.cancelMyAppointment(phoneNumber, messageText, idbarbershops);
+
+      // limpiamos estado de la conversación (opcional, según tu necesidad)
+      conversationManager.clearConversation(phoneNumber);
+      return;
+    }
     return;
   }
 
@@ -131,17 +262,55 @@ async function processIncomingMessage(message, botNumberId) {
   if (text.includes('mi turno') || text === 'mi turno') {
     await sendMyAppointment(phoneNumber, idbarbershops);
 
+  } else if (text.includes('cancelar') || text === 'cancelar') {
+
+
+    const appointments = await Appointment.findByPhone(phoneNumber, idbarbershops);
+
+    if (appointments.length === 0) {
+      await sendWhatsAppMessage(phoneNumber, `❌ *No tienes turnos activos para cancelar.*`);
+      return;
+    }
+
+    // 🧠 Guardamos el estado temporal para saber que está en proceso de cancelación
+    conversationManager.setConversationState(phoneNumber, {
+      step: 'awaiting_cancel_selection',
+      data: { appointments }
+    });
+
+    // 📋 Enviamos la lista de turnos numerados
+    let msg = `📅 *Tus Turnos Activos*\n\n`;
+    appointments.forEach((apt, index) => {
+      const date = new Date(apt.appointment_date).toLocaleDateString('es-ES');
+      const timeStr = new Date(apt.appointment_time).toLocaleTimeString('es-ES', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'America/Bogota'
+      });
+      msg += `${index + 1}. *${apt.service_name}*\n`;
+      msg += `📅 ${date} a las ${timeStr}\n`;
+      msg += `💰 $${apt.price}\n`;
+      msg += `📊 Estado: ${apt.status === 'pending' ? 'Pendiente' : 'Confirmado'}\n\n`;
+    });
+    msg += `Por favor indica el número del turno que deseas cancelar.\n\n👉 Ejemplo: *CANCELAR 1*`;
+
+    await sendWhatsAppMessage(phoneNumber, msg);
+    return;
+
+
   } else if (text.includes('reservar') || text === 'reservar') {
 
     const waId = message.from; // este es el número del cliente en WhatsApp
     const hahja = BotNumberService.getPhoneNumberClient();
+    console.log('****************' + waId);
     console.log('****************' + hahja);
     // Buscar cliente en la BD por wa_id o phone
-    const client = await Appointment.findAppointmentByClientId(waId);
+    const client = await Appointment.findAppointmentByClientId(hahja);
     if (client) {
       const idClient = client.idclients;
       BotNumberService.setIdClient(idClient);
-
+      console.log('****************' + idClient);
       // Verificar si ya tiene un turno pendiente
       const hasPending = await conversationManager.checkExistingAppointment(idClient);
 
@@ -157,6 +326,8 @@ async function processIncomingMessage(message, botNumberId) {
     await sendWelcomeMessage(phoneNumber);
   }
 }
+
+
 
 async function sendWhatsAppMessage(phoneNumber, message) {
   if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
@@ -223,6 +394,26 @@ Hola ${appointment.client_name}, tu turno ha sido confirmado:
 *Importante:* Si necesitas cancelar o reprogramar, contáctanos con al menos 2 horas de anticipación.`;
 }
 
+function generateCancelledMessage(appointment) {
+  const date = new Date(appointment.appointment_date).toLocaleDateString('es-ES');
+  const time = appointment.appointment_time;
+
+  return `❌ ¡Turno Cancelado! ❌
+
+Hola ${appointment.client_name}, lamentamos informarte que tu turno ha sido cancelado.
+
+📅 *Fecha:* ${date}
+🕐 *Hora:* ${time}
+💇 *Servicio:* ${appointment.service_name}
+⏱️ *Duración:* ${appointment.service_duration} minutos
+💰 *Precio:* $${appointment.service_price}
+
+📍 ${process.env.BUSINESS_ADDRESS || 'Dirección del negocio'}
+📞 ${process.env.BUSINESS_PHONE || 'Teléfono del negocio'}
+
+Si deseas reprogramar tu cita, puedes comunicarte con nosotros. ¡Gracias por tu comprensión! 🙏`;
+}
+
 function generateReminderMessage(appointment) {
   const date = new Date(appointment.appointment_date).toLocaleDateString('es-ES');
   const time = appointment.appointment_time;
@@ -253,8 +444,9 @@ async function sendWelcomeMessage(phoneNumber) {
 ¡Bienvenido a ${process.env.BUSINESS_NAME || 'nuestro negocio'}!
 
 *Comandos disponibles:*
-1. "RESERVAR" - Instrucciones para reservar
-2. "MI TURNO" - Ver tu turno actual
+ "Reservar" - Instrucciones para reservar
+ "Mi turno" - Ver tu turno actual
+ "Cancelar" - Cancelar tu turno
 
 
 📞 *Teléfono:* +${phone || 'Teléfono del negocio'}

@@ -126,6 +126,8 @@ class Appointment {
     return rows.length > 0;
   }
 
+
+
   static async findByPhone(phone, barbershopId) {
     const pool = getPool();
     const normalizedPhone = phone.startsWith('+') ? phone : `+${phone}`;
@@ -169,10 +171,10 @@ class Appointment {
   static async findByIdClient(IdClient) {
     const pool = getPool();
     const [rows] = await pool.execute(
-      `SELECT 1 FROM appointments WHERE client_id = ? AND status = 'pending' OR status = 'confirmed' LIMIT 1`,
+      `SELECT * FROM appointments WHERE client_id = ? AND (status = 'pending' OR status = 'confirmed')`,
       [IdClient]
     );
-    return rows.length > 0;
+    return rows;
   }
 
   //encontrar el cliente por su numero de telefono
@@ -183,6 +185,34 @@ class Appointment {
       [botNumberId]
     );
     return rows[0] || null;
+  }
+
+  static async getOccupiedSlotsByDate(date, barbershopId, barberId = null) {
+    const pool = getPool();
+
+    let query = `
+      SELECT
+        TIME_FORMAT(a.appointment_time, '%H:%i') as appointment_time,
+        s.duration
+      FROM appointments a
+      JOIN services s ON a.service_id = s.idservices
+      WHERE
+        a.appointment_date = ? AND
+        a.barbershop_id = ? AND
+        a.status IN ('pending', 'confirmed')
+    `;
+
+    const params = [date, barbershopId];
+
+    if (barberId) {
+      query += ' AND a.barber_id = ?';
+      params.push(barberId);
+    }
+
+    query += ' ORDER BY a.appointment_time ASC';
+
+    const [rows] = await pool.execute(query, params);
+    return rows;
   }
 }
 
