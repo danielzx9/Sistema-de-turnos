@@ -3,6 +3,7 @@ const { getPool } = require('../database/init');
 const AppointmentController = require('../controllers/AppointmentController');
 const Appointment = require('../models/Appointment');
 const BotNumberService = require('../services/BotNumberService')
+const WhatsAppController = require('../controllers/WhatsAppController')
 
 // --- NUEVAS FUNCIONES AUXILIARES ---
 
@@ -106,6 +107,17 @@ class ConversationManager {
       case 'confirm_phone':
         return await this.handlePhoneConfirmation(phoneNumber, message);*/
 
+      case 'awaiting_cancel_selection': {
+        // devolvemos la intención y dejamos que quien llamó (el controlador) ejecute la acción
+        return {
+          action: 'call_cancel',
+          payload: {
+            messageText: message // el texto enviado por el usuario (ej. "CANCELAR 1")
+            // puedes agregar más datos si quieres: e.g. state.data.appointments
+          }
+        }
+      }
+
       case 'final_confirmation':
         return await this.handleFinalConfirmation(phoneNumber, message, botNumberId);
 
@@ -163,30 +175,30 @@ class ConversationManager {
       return { action: 'restart', message: 'Error al obtener servicios. Por favor, contáctanos directamente.' };
     }
   }
-  //handleDateSelection
+
 
   // Manejar selección de fecha y hora en un solo mensaje (ej: "lunes 14:00")
   async handleDateSelection(phoneNumber, message, botNumberId) {
     const state = this.getConversationState(phoneNumber);
     const pool = getPool();
-  
+
     try {
       // ------------------------------------------------------------
-      // 1. Extraer día y hora del mensaje (ej: "lunes 14:30")
+      // 1. Extraer día y hora del mensaje (ej: "lunes 14:30" o "hoy 15:00")
       // ------------------------------------------------------------
-      const regex = /(lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo)\s+([0-2]?[0-9]:[0-5][0-9])/i;
+      const regex = /(hoy|mañana|lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo)\s+([0-2]?[0-9]:[0-5][0-9])/i;
       const match = message.match(regex);
-  
+
       if (!match) {
         return {
           action: "send_message",
-          message: `❌ *Formato inválido*\n\nPor favor escribe el día y hora en este formato:\n\n👉 Ejemplo: \n• lunes 14:00\n• martes 09:30\n• miércoles 16:00`
+          message: `❌ *Formato inválido*\n\nPor favor escribe el día y hora en este formato:\n\n👉 Ejemplo: \n• hoy 14:00\n• mañana 09:30\n• lunes 16:00`
         };
       }
-  
+
       const diaTexto = match[1].toLowerCase();
       const horaTexto = match[2]; // "14:30"
-  
+
       // ------------------------------------------------------------
       // 2. Calcular la fecha seleccionada según el día mencionado
       // ------------------------------------------------------------
@@ -201,30 +213,37 @@ class ConversationManager {
         "sábado": 6,
         "sabado": 6
       };
-  
+
       const today = new Date();
       const todayDay = today.getDay(); // 0-6
-      const targetDay = diasSemana[diaTexto];
-  
       let selectedDate = new Date(today);
-      let diff = targetDay - todayDay;
-      if (diff < 0) diff += 7; // siguiente semana si ya pasó el día
-      selectedDate.setDate(today.getDate() + diff);
-  
+      let diff = 0;
+
+      if (diaTexto === "hoy") {
+        diff = 0;
+      } else if (diaTexto === "mañana") {
+        diff = 1;
+        selectedDate.setDate(today.getDate() + 1);
+      } else {
+        const targetDay = diasSemana[diaTexto];
+        diff = targetDay - todayDay;
+        if (diff < 0) diff += 7; // siguiente semana si ya pasó el día
+        selectedDate.setDate(today.getDate() + diff);
+      }
+
       // ------------------------------------------------------------
       // 3. Validar hora y ajustar fecha/hora
       // ------------------------------------------------------------
       const [hours, minutes] = horaTexto.split(":").map(Number);
       selectedDate.setHours(hours, minutes, 0, 0);
-  
-      // Si es el mismo día, validar que la hora no sea pasada
-      if (diff === 0 && selectedDate < today) {
+
+      if (diaTexto === "hoy" && selectedDate < today) {
         return {
           action: "send_message",
           message: `❌ *Hora inválida*\n\nYa pasó la hora ${horaTexto} de hoy.\nPor favor elige una hora futura.`
         };
       }
-  
+
       // ------------------------------------------------------------
       // 4. Validar que esté en intervalos de 30 minutos exactos
       // ------------------------------------------------------------
@@ -234,97 +253,79 @@ class ConversationManager {
           message: `❌ *Turnos solo en intervalos de 30 minutos*\n\nEjemplos válidos:\n• 09:00\n• 09:30\n• 14:00\n• 16:30`
         };
       }
-  
+
       // ------------------------------------------------------------
       // 5. Validar contra la configuración del negocio
       // ------------------------------------------------------------
       const botNumber = BotNumberService.getBotNumber();
       const barbershops = await Appointment.findBybotNumber(botNumber);
       const idbarbershops = barbershops.idbarbershops;
-  
+
       const [configRows] = await pool.execute(
         "SELECT * FROM barbershops WHERE idbarbershops = ?",
         [idbarbershops]
       );
-  
+
       if (configRows.length === 0) {
         throw new Error("Configuración no encontrada");
       }
-  
+
       const config = configRows[0];
       const [openHour, openMin] = config.open_time.split(":").map(Number);
       const [closeHour, closeMin] = config.close_time.split(":").map(Number);
-  
+
       const openTime = new Date(selectedDate);
       openTime.setHours(openHour, openMin, 0, 0);
-  
+
       const closeTime = new Date(selectedDate);
       closeTime.setHours(closeHour, closeMin, 0, 0);
-  
+
       if (selectedDate < openTime || selectedDate > closeTime) {
         return {
           action: "send_message",
           message: `❌ *Horario fuera de atención*\n\nNuestros horarios son:\n🕐 ${config.open_time} - ${config.close_time}`
         };
       }
-  
 
-      const dateStr = selectedDate.toISOString().split("T")[0]; // "YYYY-MM-DD"
-      const timeStr = horaTexto; // "HH:MM"
-  
-      // (Aquí asumimos que la duración fija es de 30 minutos como mencionaste)
-      const serviceDuration = 30;
+      // ------------------------------------------------------------
+      // 6. Validar disponibilidad del turno
+      // ------------------------------------------------------------
+      const dateStr = selectedDate.toISOString().split("T")[0];
+      const timeStr = horaTexto;
+
       const isAvailable = await AppointmentController.isSlotAvailable(dateStr, timeStr, idbarbershops);
 
-      
       if (!isAvailable) {
-        // --- INICIO DE LA NUEVA LÓGICA PARA SUGERIR HORARIOS ---
-
-        // 1. Obtenemos todos los turnos ya ocupados para ese día.
+        // --- Lógica de sugerencias de horarios ya existente ---
         const occupiedSlots = await Appointment.getOccupiedSlotsByDate(dateStr, idbarbershops);
         const occupiedTimes = new Set(occupiedSlots.map(slot => slot.appointment_time));
 
-        // 2. Definimos el rango de trabajo en minutos.
         const openTimeMinutes = timeToMinutes(config.open_time);
         const closeTimeMinutes = timeToMinutes(config.close_time);
-        
         const availableSlots = [];
-        const interval = 30; // Intervalo de 30 minutos
+        const interval = 30;
 
-        // 3. Generamos todos los horarios posibles y filtramos los disponibles.
         for (let i = openTimeMinutes; i < closeTimeMinutes; i += interval) {
           const potentialTime = minutesToTime(i);
-          
-          // Un horario está disponible si NO está en la lista de ocupados.
           if (!occupiedTimes.has(potentialTime)) {
-            // Si es hoy, nos aseguramos de no mostrar horarios que ya pasaron.
             const potentialDate = new Date(`${dateStr}T${potentialTime}`);
-            if (diff === 0 && potentialDate < new Date()) {
-                continue; // Saltar este horario porque ya pasó
-            }
+            if (diaTexto === "hoy" && potentialDate < new Date()) continue;
             availableSlots.push(potentialTime);
           }
         }
 
-        // 4. Construimos el mensaje de respuesta.
         let responseMessage = `❌ *El turno de las ${timeStr} no está disponible.*\n\n`;
-
         if (availableSlots.length > 0) {
-          responseMessage += `Estos son los horarios libres para el *${diaTexto}*:\n\n`;
-          // Formateamos la lista para que sea fácil de leer en WhatsApp
+          responseMessage += `Estos son los horarios libres para *${diaTexto}*:\n\n`;
           responseMessage += availableSlots.map(slot => `✅ *${slot}*`).join('\n');
           responseMessage += `\n\nPor favor, elige uno de los horarios disponibles.`;
         } else {
-          responseMessage += `Lo sentimos, no quedan más turnos disponibles para el *${diaTexto}*.`;
+          responseMessage += `Lo sentimos, no quedan más turnos disponibles para *${diaTexto}*.`;
         }
 
-        return {
-          action: "send_message",
-          message: responseMessage
-        };
-        // --- FIN DE LA NUEVA LÓGICA ---
+        return { action: "send_message", message: responseMessage };
       }
-  
+
       // ------------------------------------------------------------
       // 7. Guardar estado y pedir confirmación
       // ------------------------------------------------------------
@@ -332,21 +333,22 @@ class ConversationManager {
         step: "final_confirmation",
         data: { ...state.data, date: selectedDate, time: timeStr }
       });
-  
+
       const dateStr2 = selectedDate.toLocaleDateString("es-ES");
       const horaStr = timeStr;
-  
+
       return {
         action: "send_message",
         message: `📋 *Resumen de tu reserva:*\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${dateStr2}\n*Hora:* ${horaStr}\n*Teléfono:* ${phoneNumber}\n*Precio:* $${state.data.service.price}\n\n¿Confirmas esta reserva?\n\nEscribe:\n• "SI" para confirmar\n• "NO" para cancelar`
       };
-  
+
     } catch (error) {
       console.error("Error al validar fecha y hora:", error);
       this.clearConversation(phoneNumber);
       return { action: "restart", message: "⚠️ Error al validar la reserva. Por favor, intenta de nuevo o contáctanos." };
     }
   }
+
 
   // Manejar confirmación final
   async handleFinalConfirmation(phoneNumber, message) {
