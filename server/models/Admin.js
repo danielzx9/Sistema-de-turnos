@@ -19,6 +19,8 @@ class Admin {
     return rows[0] || null;
   }
 
+ 
+
   static async create(adminData) {
     const pool = getPool();
     const { barbershop_id, username, email, password, name } = adminData;
@@ -44,6 +46,34 @@ class Admin {
       [username, email]
     );
     return rows.length > 0;
+  }
+
+  static async findByPhone(phone) {
+    const pool = getPool();
+    const [rows] = await pool.execute(
+      'SELECT * FROM barbershops WHERE business_phone = ? LIMIT 1',
+      [phone]
+    );
+    return rows[0] || null;
+  }
+
+
+  static async findByUsername(username) {
+    const pool = getPool();
+    const [rows] = await pool.execute(
+      'SELECT * FROM admins WHERE username = ? LIMIT 1',
+      [username]
+    );
+    return rows[0] || null;
+  }
+
+  static async findByIdBarber(idbarber) {
+    const pool = getPool();
+    const [rows] = await pool.execute(
+      'SELECT * FROM barbershops WHERE idbarbershops = ? LIMIT 1',
+      [idbarber]
+    );
+    return rows[0] || null;
   }
 }
 
