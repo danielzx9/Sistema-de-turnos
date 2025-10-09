@@ -4,6 +4,7 @@ const AppointmentController = require('../controllers/AppointmentController');
 const Appointment = require('../models/Appointment');
 const BotNumberService = require('../services/BotNumberService')
 const WhatsAppController = require('../controllers/WhatsAppController')
+const Client = require('../models/Client')
 
 // --- NUEVAS FUNCIONES AUXILIARES ---
 
@@ -101,11 +102,11 @@ class ConversationManager {
       //case 'select_time':
       //return await this.handleTimeSelection(phoneNumber, message, botNumberId);
 
-      /*case 'confirm_name':
+      case 'confirm_name':
         return await this.handleNameConfirmation(phoneNumber, message);
 
-      case 'confirm_phone':
-        return await this.handlePhoneConfirmation(phoneNumber, message);*/
+      //case 'confirm_phone':
+        //return await this.handlePhoneConfirmation(phoneNumber, message);*/
 
       case 'awaiting_cancel_selection': {
         // devolvemos la intención y dejamos que quien llamó (el controlador) ejecute la acción
@@ -329,24 +330,65 @@ class ConversationManager {
       // ------------------------------------------------------------
       // 7. Guardar estado y pedir confirmación
       // ------------------------------------------------------------
-      this.setConversationState(phoneNumber, {
-        step: "final_confirmation",
-        data: { ...state.data, date: selectedDate, time: timeStr }
-      });
+      let client = await Client.findByPhone(phoneNumber, idbarbershops);
 
-      const dateStr2 = selectedDate.toLocaleDateString("es-ES");
-      const horaStr = timeStr;
+      if (client) {
+        this.setConversationState(phoneNumber, {
+          step: "final_confirmation",
+          data: { ...state.data, date: selectedDate, time: timeStr }
+        });
+  
+        const dateStr2 = selectedDate.toLocaleDateString("es-ES");
+        const horaStr = timeStr;
+  
+        return {
+          action: "send_message",
+          message: `📋 *Resumen de tu reserva:*\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${dateStr2}\n*Hora:* ${horaStr}\n*Teléfono:* ${phoneNumber}\n*Precio:* $${state.data.service.price}\n\n¿Confirmas esta reserva?\n\nEscribe:\n• "SI" para confirmar\n• "NO" para cancelar`
+        };
+      } else {
 
-      return {
-        action: "send_message",
-        message: `📋 *Resumen de tu reserva:*\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${dateStr2}\n*Hora:* ${horaStr}\n*Teléfono:* ${phoneNumber}\n*Precio:* $${state.data.service.price}\n\n¿Confirmas esta reserva?\n\nEscribe:\n• "SI" para confirmar\n• "NO" para cancelar`
-      };
+        this.setConversationState(phoneNumber, {
+          step: 'confirm_name',
+          data: { ...state.data, date: selectedDate, time: timeStr }
+        });
+  
+        return {
+          action: 'send_message',
+          message: `👤 *¿Cuál es tu nombre completo?*\n\nEscribe tu nombre y apellido:`
+        };
 
+      }
     } catch (error) {
       console.error("Error al validar fecha y hora:", error);
       this.clearConversation(phoneNumber);
       return { action: "restart", message: "⚠️ Error al validar la reserva. Por favor, intenta de nuevo o contáctanos." };
     }
+  }
+
+  async handleNameConfirmation(phoneNumber, message) {
+
+    if (message.length < 3) {
+      return {
+        action: 'send_message',
+        message: '❌ *Nombre muy corto*\n\nPor favor, escribe tu nombre completo (nombre y apellido):'
+      };
+    }
+
+    const state = this.getConversationState(phoneNumber);
+    this.setConversationState(phoneNumber, {
+      step: "final_confirmation",
+      data: { ...state.data, nombre: message }
+    });
+    const datesr = new Date(state.data.date);
+    const dateStr2 = datesr.getFullYear() + '-' +
+    String(datesr.getMonth() + 1).padStart(2, '0') + '-' +
+    String(datesr.getDate()).padStart(2, '0');
+    const horaStr = state.data.time;
+
+    return {
+      action: "send_message",
+      message: `📋 *Resumen de tu reserva:*\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${dateStr2}\n*Hora:* ${horaStr}\n*Teléfono:* ${phoneNumber}\n*Precio:* $${state.data.service.price}\n\n¿Confirmas esta reserva?\n\nEscribe:\n• "SI" para confirmar\n• "NO" para cancelar`
+    };
   }
 
 
@@ -373,9 +415,10 @@ class ConversationManager {
           };
         }
         const appointmentDateTime = `${dateISO} ${timeStr}:00`;
+        let client = await Client.findByPhone(phoneNumber, idbarbershops);
         // Crear la reserva en la base de datos
         await AppointmentController.create({
-          clientName: phoneNumber,
+          clientName: state?.data?.nombre ?? client.name,
           clientPhone: phoneNumber,
           clientEmail: null,
           serviceId: state.data.service.idservices,

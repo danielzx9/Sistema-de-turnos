@@ -2,9 +2,12 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
 const Admin = require('../models/Admin');
+const BotNumberService = require('../services/BotNumberService');
 
 class AuthController {
   static async login(req, res) {
+
+    const body = req.body;
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -25,6 +28,14 @@ class AuthController {
         return res.status(401).json({ error: 'Credenciales inválidas' });
       }
 
+      
+      const tel = await Admin.findByUsername(body?.username);
+      const tel2 = await Admin.findByIdBarber(tel.barbershop_id);
+
+      if (tel2.license_status == 'expired'){
+        return res.status(401).json({ error: 'Licencia caducada' });
+      }
+
       const token = jwt.sign(
         {
           id: admin.idadmins,
@@ -33,7 +44,7 @@ class AuthController {
           email: admin.email
         },
         process.env.JWT_SECRET,
-        { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+        { expiresIn: process.env.JWT_EXPIRES_IN || '1m' }
       );
 
       res.json({
