@@ -4,6 +4,7 @@ const Service = require('../models/Service');
 const Business = require('../models/Business');
 const BotNumberService = require('../services/BotNumberService');
 const conversationManager = require('../utils/conversationManager');
+const Admin = require('../models/Admin')
 
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v18.0';
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
@@ -15,6 +16,7 @@ class WhatsAppController {
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
+    
     if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
       console.log('✅ Webhook de WhatsApp verificado');
       res.status(200).send(challenge);
@@ -24,33 +26,45 @@ class WhatsAppController {
     }
   }
 
-  static webhookPost(req, res) {
+  static async  webhookPost(req, res) {
     const body = req.body;
+    const telefonoWhats = body.entry?.[0]?.changes?.[0]?.value?.metadata?.display_phone_number;
+    
+    const tel = await Admin.findByPhone(telefonoWhats);
 
-    if (body.object === 'whatsapp_business_account') {
-      body.entry.forEach(entry => {
-        entry.changes.forEach(change => {
-          if (change.field === 'messages') {
-            const metadata = change.value?.metadata || {};
-            const messages = change.value.messages;
-            const botNumber = metadata.display_phone_number;
+    
 
-            const waId = change.value?.contacts?.[0]?.wa_id;
-
-            BotNumberService.setPhoneNumberClient(waId);
-
-
-            BotNumberService.setBotNumber(botNumber);
-
-
-            if (messages) {
-              messages.forEach(message => {
-                processIncomingMessage(message, botNumber);
-              });
+    if(tel.license_status == 'active'){
+      if (body.object === 'whatsapp_business_account') {
+        body.entry.forEach(entry => {
+          entry.changes.forEach(change => {
+            if (change.field === 'messages') {
+              const metadata = change.value?.metadata || {};
+              const messages = change.value.messages;
+              const botNumber = metadata.display_phone_number;
+  
+              const waId = change.value?.contacts?.[0]?.wa_id;
+  
+              BotNumberService.setPhoneNumberClient(waId);
+  
+  
+              BotNumberService.setBotNumber(botNumber);
+  
+  
+              if (messages) {
+                messages.forEach(message => {
+                  processIncomingMessage(message, botNumber);
+                });
+              }
             }
-          }
+          });
         });
-      });
+    }else{
+
+    }
+
+
+    
     }
 
     res.status(200).send('OK');
