@@ -88,6 +88,8 @@ export const sendCancelled = async (appointmentId: number, phoneNumber: string) 
   return response.data
 }
 
+
+
 export const sendReminder = async (appointmentId: number, phoneNumber: string) => {
   const response = await api.post('/whatsapp/send-reminder', {
     appointmentId,

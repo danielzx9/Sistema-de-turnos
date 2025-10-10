@@ -16,7 +16,7 @@ class WhatsAppController {
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
-    
+
     if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
       console.log('✅ Webhook de WhatsApp verificado');
       res.status(200).send(challenge);
@@ -26,49 +26,74 @@ class WhatsAppController {
     }
   }
 
-  static async  webhookPost(req, res) {
-    const body = req.body;
-    const telefonoWhats = body.entry?.[0]?.changes?.[0]?.value?.metadata?.display_phone_number;
-    
-    const tel = await Admin.findByPhone(telefonoWhats);
+  static async webhookPost(req, res) {
+    try {
+      const body = req.body;
 
-    
+      // Verificamos que el objeto principal sea de WhatsApp
+      if (body.object !== 'whatsapp_business_account') {
+        return res.sendStatus(404);
+      }
 
-    if(tel.license_status == 'active'){
-      if (body.object === 'whatsapp_business_account') {
-        body.entry.forEach(entry => {
-          entry.changes.forEach(change => {
-            if (change.field === 'messages') {
-              const metadata = change.value?.metadata || {};
-              const messages = change.value.messages;
-              const botNumber = metadata.display_phone_number;
-  
-              const waId = change.value?.contacts?.[0]?.wa_id;
-  
-              BotNumberService.setPhoneNumberClient(waId);
-  
-  
-              BotNumberService.setBotNumber(botNumber);
-  
-  
-              if (messages) {
-                messages.forEach(message => {
-                  processIncomingMessage(message, botNumber);
-                });
-              }
+      // Obtenemos el número del bot (display_phone_number)
+      const telefonoWhats = body.entry?.[0]?.changes?.[0]?.value?.metadata?.display_phone_number;
+      if (!telefonoWhats) {
+        console.log('⚠️ No se encontró número de WhatsApp en el evento');
+        return res.sendStatus(200);
+      }
+
+      // Verificamos licencia activa
+      const tel = await Admin.findByPhone(telefonoWhats);
+      if (!tel || tel.license_status !== 'active') {
+        console.log('⚠️ Licencia inactiva o no encontrada para', telefonoWhats);
+        return res.sendStatus(200);
+      }
+
+      // Procesamos solo si hay mensajes reales
+      body.entry.forEach(entry => {
+        entry.changes.forEach(change => {
+          const value = change.value;
+
+          // ✅ Ignorar eventos sin mensajes (por ejemplo, statuses)
+          if (!value || !value.messages || value.messages.length === 0) {
+            console.log('ℹ️ Evento sin mensajes entrantes, ignorado');
+            return;
+          }
+
+          const metadata = value.metadata || {};
+          const botNumber = metadata.display_phone_number;
+          const waId = value.contacts?.[0]?.wa_id;
+
+          // Guardamos números en servicio
+          BotNumberService.setPhoneNumberClient(waId);
+          BotNumberService.setBotNumber(botNumber);
+
+          value.messages.forEach(message => {
+            // ⚠️ Ignorar mensajes enviados por el propio bot
+            if (message.from_me) {
+              console.log('💬 Mensaje enviado por el bot, se ignora');
+              return;
             }
+
+            // ⚠️ Solo procesar mensajes de texto
+            if (message.type !== 'text') {
+              console.log('📎 Mensaje no de texto (tipo:', message.type, '), ignorado');
+              return;
+            }
+
+            // ✅ Procesar el mensaje entrante real
+            processIncomingMessage(message, botNumber);
           });
         });
-    }else{
+      });
 
+      res.status(200).send('OK');
+    } catch (error) {
+      console.error('❌ Error en webhookPost:', error);
+      res.sendStatus(500);
     }
-
-
-    
-    }
-
-    res.status(200).send('OK');
   }
+
 
   static async sendConfirmation(req, res) {
     console.log('📨 Llamada a sendConfirmation:', req.body);
@@ -117,6 +142,11 @@ class WhatsAppController {
       res.status(500).json({ error: 'Error al enviar mensaje' });
     }
   }
+
+  
+
+  /////////////////////////////no disponible
+  
 
   static async cancelMyAppointment(phoneNumber, message, idbarbershops) {
     try {
@@ -376,9 +406,11 @@ async function sendWhatsAppMessage(phoneNumber, message) {
 
 async function getAppointmentDetails(appointmentId) {
   try {
-    const botNumber = BotNumberService.getBotNumber();
-    const barbershops = await Appointment.findBybotNumber(botNumber);
-    const idbarbershops = barbershops.idbarbershops;
+
+    const idappointments = await Appointment.findAppointmentById(appointmentId);
+
+    const idbarbershops = idappointments.barbershop_id;
+    console.log(idbarbershops);
     const appointment = await Appointment.findById(appointmentId, idbarbershops); // Assuming barbershop_id 1 for now
     return appointment;
   } catch (error) {
@@ -386,8 +418,10 @@ async function getAppointmentDetails(appointmentId) {
   }
 }
 
-function generateConfirmationMessage(appointment) {
+async function generateConfirmationMessage(appointment) {
   const date = new Date(appointment.appointment_date).toLocaleDateString('es-ES');
+  const idbarbershops = appointment.barbershop_id;
+  const barbershop = await Appointment.findByidBarber(idbarbershops);
   const time = appointment.appointment_time;
 
   return `🎉 *¡Turno Confirmado!*
@@ -402,14 +436,16 @@ Hola ${appointment.client_name}, tu turno ha sido confirmado:
 
 ¡Te esperamos en ${process.env.BUSINESS_NAME || 'nuestro local'}!
 
-📍 ${process.env.BUSINESS_ADDRESS || 'Dirección del negocio'}
-📞 ${process.env.BUSINESS_PHONE || 'Teléfono del negocio'}
+📍 ${barbershop.business_address || 'Dirección del negocio'}
+📞 ${barbershop.business_phone || 'Teléfono del negocio'}
 
 *Importante:* Si necesitas cancelar o reprogramar, contáctanos con al menos 2 horas de anticipación.`;
 }
 
-function generateCancelledMessage(appointment) {
+async function generateCancelledMessage(appointment) {
   const date = new Date(appointment.appointment_date).toLocaleDateString('es-ES');
+  const idbarbershops = appointment.barbershop_id;
+  const barbershop = await Appointment.findByidBarber(idbarbershops);
   const time = appointment.appointment_time;
 
   return `❌ ¡Turno Cancelado! ❌
@@ -422,15 +458,17 @@ Hola ${appointment.client_name}, lamentamos informarte que tu turno ha sido canc
 ⏱️ *Duración:* ${appointment.service_duration} minutos
 💰 *Precio:* $${appointment.service_price}
 
-📍 ${process.env.BUSINESS_ADDRESS || 'Dirección del negocio'}
-📞 ${process.env.BUSINESS_PHONE || 'Teléfono del negocio'}
+📍 ${barbershop.business_address || 'Dirección del negocio'}
+📞 ${barbershop.business_phone || 'Teléfono del negocio'}
 
 Si deseas reprogramar tu cita, puedes comunicarte con nosotros. ¡Gracias por tu comprensión! 🙏`;
 }
 
-function generateReminderMessage(appointment) {
+async function generateReminderMessage(appointment) {
   const date = new Date(appointment.appointment_date).toLocaleDateString('es-ES');
   const time = appointment.appointment_time;
+  const idbarbershops = appointment.barbershop_id;
+  const barbershop = await Appointment.findByidBarber(idbarbershops);
 
   return `⏰ *Recordatorio de Turno*
 
@@ -442,8 +480,8 @@ Hola ${appointment.client_name}, te recordamos que tienes un turno mañana:
 
 ¡No olvides venir a tu cita!
 
-📍 ${process.env.BUSINESS_ADDRESS || 'Dirección del negocio'}
-📞 ${process.env.BUSINESS_PHONE || 'Teléfono del negocio'}
+📍 ${barbershop.business_address || 'Dirección del negocio'}
+📞 ${barbershop.business_phone || 'Teléfono del negocio'}
 
 Si necesitas cancelar o reprogramar, contáctanos lo antes posible.`;
 }
