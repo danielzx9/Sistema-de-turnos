@@ -27,7 +27,7 @@ export interface Appointment {
   service_id: number
   appointment_date: string
   appointment_time: string
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'notavailable'
   notes?: string
   created_at: string
   updated_at: string

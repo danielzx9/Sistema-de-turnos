@@ -106,7 +106,7 @@ class ConversationManager {
         return await this.handleNameConfirmation(phoneNumber, message);
 
       //case 'confirm_phone':
-        //return await this.handlePhoneConfirmation(phoneNumber, message);*/
+      //return await this.handlePhoneConfirmation(phoneNumber, message);*/
 
       case 'awaiting_cancel_selection': {
         // devolvemos la intención y dejamos que quien llamó (el controlador) ejecute la acción
@@ -272,6 +272,24 @@ class ConversationManager {
       }
 
       const config = configRows[0];
+
+      const workingDays = config.working_days
+        ? config.working_days.split(',').map(Number)
+        : [0, 1, 2, 3, 4, 5, 6]; // Por defecto: lunes a sábado
+
+      const selectedDayOfWeek = selectedDate.getDay(); // 0=Domingo, 6=Sábado
+
+      if (!workingDays.includes(selectedDayOfWeek)) {
+        const diasTexto = [
+          "domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"
+        ];
+
+        return {
+          action: "send_message",
+          message: `❌ *Día no disponible*\n\nEl negocio no atiende el dia *${diasTexto[selectedDayOfWeek]}*.\nPor favor elige otro día disponible.`
+        };
+      }
+
       const [openHour, openMin] = config.open_time.split(":").map(Number);
       const [closeHour, closeMin] = config.close_time.split(":").map(Number);
 
@@ -337,10 +355,10 @@ class ConversationManager {
           step: "final_confirmation",
           data: { ...state.data, date: selectedDate, time: timeStr }
         });
-  
+
         const dateStr2 = selectedDate.toLocaleDateString("es-ES");
         const horaStr = timeStr;
-  
+
         return {
           action: "send_message",
           message: `📋 *Resumen de tu reserva:*\n\n*Servicio:* ${state.data.service.name}\n*Fecha:* ${dateStr2}\n*Hora:* ${horaStr}\n*Teléfono:* ${phoneNumber}\n*Precio:* $${state.data.service.price}\n\n¿Confirmas esta reserva?\n\nEscribe:\n• "SI" para confirmar\n• "NO" para cancelar`
@@ -351,7 +369,7 @@ class ConversationManager {
           step: 'confirm_name',
           data: { ...state.data, date: selectedDate, time: timeStr }
         });
-  
+
         return {
           action: 'send_message',
           message: `👤 *¿Cuál es tu nombre completo?*\n\nEscribe tu nombre y apellido:`
@@ -381,8 +399,8 @@ class ConversationManager {
     });
     const datesr = new Date(state.data.date);
     const dateStr2 = datesr.getFullYear() + '-' +
-    String(datesr.getMonth() + 1).padStart(2, '0') + '-' +
-    String(datesr.getDate()).padStart(2, '0');
+      String(datesr.getMonth() + 1).padStart(2, '0') + '-' +
+      String(datesr.getDate()).padStart(2, '0');
     const horaStr = state.data.time;
 
     return {

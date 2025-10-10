@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { sendConfirmation, sendCancelled } from '@/lib/api'
 
+
 interface Appointment {
   id: number
   client_name: string
@@ -16,12 +17,14 @@ interface Appointment {
   service_price: number
   appointment_date: string
   appointment_time: string
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'notavailable'
   notes?: string
   created_at: string
 }
 
 export default function AppointmentsList() {
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null)
+
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState({
@@ -75,11 +78,11 @@ export default function AppointmentsList() {
           body: JSON.stringify({ status })
         }
       )
-      console.log(id);
+      console.log(status);
 
       if (response.ok) {
         // Actualizar el estado local
-        
+
         setAppointments(prev =>
           prev.map(apt =>
             apt.id === id ? { ...apt, status: status as any } : apt
@@ -90,17 +93,19 @@ export default function AppointmentsList() {
 
           await sendConfirmation(id, phoneNumber)
           console.log('✅ Mensaje de confirmación enviado a WhatsApp')
-  
+
         }
-        if (status === 'cancelled') {
+        if (status === 'cancelled' || status == 'notavailable') {
 
           await sendCancelled(id, phoneNumber)
           console.log('✅ Mensaje de cancelacion enviado a WhatsApp')
-  
+
         }
+
+
       }
 
-      
+
     } catch (error) {
       console.error('Error al actualizar turno:', error)
     }
@@ -114,6 +119,8 @@ export default function AppointmentsList() {
         return <CheckCircle className="h-4 w-4 text-blue-500" />
       case 'completed':
         return <CheckCircle className="h-4 w-4 text-green-500" />
+      case 'notavailable':
+        return <XCircle className="h-4 w-4 text-red-500" />
       case 'cancelled':
         return <XCircle className="h-4 w-4 text-red-500" />
       default:
@@ -129,6 +136,8 @@ export default function AppointmentsList() {
         return 'bg-blue-100 text-blue-800'
       case 'completed':
         return 'bg-green-100 text-green-800'
+      case 'notavailable':
+        return 'bg-red-100 text-red-800'
       case 'cancelled':
         return 'bg-red-100 text-red-800'
       default:
@@ -144,6 +153,8 @@ export default function AppointmentsList() {
         return 'Confirmado'
       case 'completed':
         return 'Completado'
+      case 'notavailable':
+        return 'no disponible'
       case 'cancelled':
         return 'Cancelado'
       default:
@@ -188,6 +199,7 @@ export default function AppointmentsList() {
             <option value="pending">Pendiente</option>
             <option value="confirmed">Confirmado</option>
             <option value="completed">Completado</option>
+            <option value="notavailable">No Disponible</option>
             <option value="cancelled">Cancelado</option>
           </select>
         </div>
@@ -263,39 +275,128 @@ export default function AppointmentsList() {
                     {appointment.status === 'pending' && (
                       <>
                         <button
-                          onClick={() => updateAppointmentStatus(appointment.id, appointment.client_phone, 'confirmed')}
+                          onClick={() =>
+                            updateAppointmentStatus(appointment.id, appointment.client_phone, 'confirmed')
+                          }
                           className="btn-success text-xs px-3 py-1"
                         >
                           Confirmar
                         </button>
                         <button
-                          onClick={() => updateAppointmentStatus(appointment.id, appointment.client_phone, 'cancelled')}
+                          onClick={() => {
+                            const confirmed = window.confirm(
+                              `¿Seguro que deseas cancelar el turno de ${appointment.client_name}?`
+                            )
+                            if (confirmed) {
+                              updateAppointmentStatus(appointment.id, appointment.client_phone, 'cancelled')
+                            }
+                          }}
                           className="btn-danger text-xs px-3 py-1"
                         >
                           Cancelar
                         </button>
+
+                        {/* 🔹 Menú desplegable también visible en estado pending */}
+                        <div className="relative">
+                          <button
+                            onClick={() =>
+                              setOpenMenuId(openMenuId === appointment.id ? null : appointment.id)
+                            }
+                            className="text-gray-400 hover:text-gray-600"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+
+                          {openMenuId === appointment.id && (
+                            <div className="absolute right-0 mt-2 w-40 bg-white border rounded-lg shadow-md z-10">
+                              <button
+                                onClick={() => {
+                                  const confirmed = window.confirm(
+                                    `¿Seguro que deseas cancelar el turno de ${appointment.client_name}?`
+                                  )
+                                  if (confirmed) {
+                                    updateAppointmentStatus(appointment.id, appointment.client_phone, 'cancelled')
+                                    setOpenMenuId(null)
+                                  }
+                                }}
+                                className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
+                              >
+                                Cancelar turno
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  const confirmed = window.confirm(
+                                    `¿Marcar el turno de ${appointment.client_name} como no disponible?`
+                                  )
+                                  if (confirmed) {
+                                    updateAppointmentStatus(appointment.id, appointment.client_phone, 'notavailable')
+                                    setOpenMenuId(null)
+                                  }
+                                }}
+                                className="block w-full text-left px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                              >
+                                No disponible
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </>
                     )}
 
                     {appointment.status === 'confirmed' && (
-                      <button
-                        onClick={() => updateAppointmentStatus(appointment.id, appointment.client_phone, 'completed')}
-                        className="btn-success text-xs px-3 py-1"
-                      >
-                        Completar
-                      </button>
-                    )}
+                      <div className="relative">
+                        <button
+                          onClick={() => setOpenMenuId(openMenuId === appointment.id ? null : appointment.id)}
+                          className="text-gray-400 hover:text-gray-600"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
 
-                    <button className="text-gray-400 hover:text-gray-600">
-                      <MoreVertical className="h-4 w-4" />
-                    </button>
+                        {openMenuId === appointment.id && (
+                          <div className="absolute right-0 mt-2 w-40 bg-white border rounded-lg shadow-md z-10">
+                            <button
+                              onClick={() => {
+                                const confirmed = window.confirm(
+                                  `¿Seguro que deseas cancelar el turno de ${appointment.client_name}?`
+                                )
+                                if (confirmed) {
+                                  updateAppointmentStatus(appointment.id, appointment.client_phone, 'cancelled')
+                                  setOpenMenuId(null)
+                                }
+                              }}
+                              className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
+                            >
+                              Cancelar turno
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                const confirmed = window.confirm(
+                                  `¿Marcar el turno de ${appointment.client_name} como no disponible?`
+                                )
+                                if (confirmed) {
+                                  updateAppointmentStatus(appointment.id, appointment.client_phone, 'notavailable')
+                                  setOpenMenuId(null)
+                                }
+                              }}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                            >
+                              No disponible
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
           ))}
         </div>
-      )}
-    </div>
+      )
+      }
+    </div >
+
   )
 }

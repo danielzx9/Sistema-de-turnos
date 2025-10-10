@@ -12,7 +12,23 @@ class Business {
 
   static async update(id, businessData) {
     const pool = getPool();
-    const { business_name, business_phone, business_address, business_email, open_time, close_time, slot_duration, working_days } = businessData;
+  
+    const {
+      business_name,
+      business_phone,
+      business_address,
+      business_email,
+      open_time,
+      close_time,
+      slot_duration,
+      working_days
+    } = businessData;
+  
+    // 🔹 Aseguramos que working_days sea string, no array
+    const workingDaysValue = Array.isArray(working_days)
+      ? working_days.join(',')
+      : working_days || '0,1,2,3,4,5,6';
+  
     const [result] = await pool.execute(
       `UPDATE barbershops SET
         business_name = ?,
@@ -33,12 +49,14 @@ class Business {
         open_time,
         close_time,
         slot_duration,
-        working_days || '1,2,3,4,5,6',
+        workingDaysValue,
         id
       ]
     );
+  
     return result.affectedRows > 0;
   }
+  
 
   static async getStats(barbershopId, dateFilter = {}) {
     const pool = getPool();
