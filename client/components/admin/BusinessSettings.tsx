@@ -24,14 +24,14 @@ interface BusinessForm {
   open_time: string
   close_time: string
   slot_duration: number
-  working_days: string
+  working_days: string[]
 }
 
 export default function BusinessSettings() {
   const [config, setConfig] = useState<BusinessConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  
+
   const { register, handleSubmit, reset, formState: { errors } } = useForm<BusinessForm>()
 
   useEffect(() => {
@@ -46,7 +46,7 @@ export default function BusinessSettings() {
           'Authorization': `Bearer ${token}`
         }
       })
-      
+
       if (response.ok) {
         const data = await response.json()
         setConfig(data)
@@ -58,8 +58,11 @@ export default function BusinessSettings() {
           open_time: data.open_time || '09:00',
           close_time: data.close_time || '18:00',
           slot_duration: data.slot_duration || 30,
-          working_days: data.working_days || '1,2,3,4,5'
+          working_days: data.working_days
+            ? data.working_days.split(',')
+            : ['1', '2', '3', '4', '5']
         })
+
       }
     } catch (error) {
       console.error('Error al cargar configuración:', error)
@@ -71,6 +74,14 @@ export default function BusinessSettings() {
   const onSubmit = async (data: BusinessForm) => {
     setSaving(true)
     try {
+      // Si working_days viene como array, conviértelo en string
+      const formattedData = {
+        ...data,
+        working_days: Array.isArray(data.working_days)
+          ? data.working_days.join(',')
+          : data.working_days
+      }
+
       const token = localStorage.getItem('admin_token')
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/business/config`, {
         method: 'PUT',
@@ -78,9 +89,9 @@ export default function BusinessSettings() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(data)
+        body: JSON.stringify(formattedData)
       })
-      
+
       if (response.ok) {
         await fetchConfig()
         alert('Configuración guardada exitosamente')
@@ -100,7 +111,7 @@ export default function BusinessSettings() {
     { value: '4', label: 'Jueves' },
     { value: '5', label: 'Viernes' },
     { value: '6', label: 'Sábado' },
-    { value: '7', label: 'Domingo' }
+    { value: '0', label: 'Domingo' }
   ]
 
   if (loading) {
@@ -134,6 +145,7 @@ export default function BusinessSettings() {
               Información del Negocio
             </h3>
           </div>
+
           <div className="card-body space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -148,40 +160,39 @@ export default function BusinessSettings() {
                 <p className="text-red-600 text-sm mt-1">{errors.business_name.message}</p>
               )}
             </div>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Teléfono
-                </label>
-                <input
-                  {...register('business_phone')}
-                  className="input"
-                  placeholder="+1234567890"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email
-                </label>
-                <input
-                  {...register('business_email', {
-                    pattern: {
-                      value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                      message: 'Email inválido'
-                    }
-                  })}
-                  type="email"
-                  className="input"
-                  placeholder="contacto@mibarberia.com"
-                />
-                {errors.business_email && (
-                  <p className="text-red-600 text-sm mt-1">{errors.business_email.message}</p>
-                )}
-              </div>
+              {/* Campo oculto de teléfono */}
+              <input
+                type="hidden"
+                {...register('business_phone')}
+              />
             </div>
-            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email
+              </label>
+              <input
+                {...register('business_email', {
+                  pattern: {
+                    value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                    message: 'Email inválido',
+                  },
+                })}
+                type="email"
+                className="input"
+                placeholder="contacto@mibarberia.com"
+              />
+              {errors.business_email && (
+                <p className="text-red-600 text-sm mt-1">{errors.business_email.message}</p>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Campo oculto de teléfono */}
+              <input
+                type="hidden"
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Dirección
@@ -195,6 +206,7 @@ export default function BusinessSettings() {
           </div>
         </div>
 
+
         {/* Horarios */}
         <div className="card">
           <div className="card-header">
@@ -204,7 +216,7 @@ export default function BusinessSettings() {
             </h3>
           </div>
           <div className="card-body space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Hora de Apertura *
@@ -218,7 +230,7 @@ export default function BusinessSettings() {
                   <p className="text-red-600 text-sm mt-1">{errors.open_time.message}</p>
                 )}
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Hora de Cierre *
@@ -232,26 +244,12 @@ export default function BusinessSettings() {
                   <p className="text-red-600 text-sm mt-1">{errors.close_time.message}</p>
                 )}
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Duración de Slots (min) *
-                </label>
-                <select
-                  {...register('slot_duration', { required: 'La duración es requerida' })}
-                  className="input"
-                >
-                  <option value={15}>15 minutos</option>
-                  <option value={30}>30 minutos</option>
-                  <option value={45}>45 minutos</option>
-                  <option value={60}>60 minutos</option>
-                </select>
-                {errors.slot_duration && (
-                  <p className="text-red-600 text-sm mt-1">{errors.slot_duration.message}</p>
-                )}
-              </div>
+
+              {/* Campo oculto para que el backend reciba slot_duration */}
+              <input type="hidden" value="30" {...register('slot_duration')} />
             </div>
-            
+
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Días de Trabajo
@@ -263,6 +261,7 @@ export default function BusinessSettings() {
                       type="checkbox"
                       value={day.value}
                       {...register('working_days')}
+                      defaultChecked={config?.working_days?.includes(day.value)}
                       className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                     />
                     <span className="ml-2 text-sm text-gray-700">{day.label}</span>
@@ -270,7 +269,7 @@ export default function BusinessSettings() {
                 ))}
               </div>
               <p className="text-xs text-gray-500 mt-2">
-                Selecciona los días de la semana en que atiendes (1=Lunes, 7=Domingo)
+                Selecciona los días de la semana en que atiendes (0=Domingo, 6=Sabado)
               </p>
             </div>
           </div>

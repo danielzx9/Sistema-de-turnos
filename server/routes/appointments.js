@@ -23,7 +23,7 @@ router.post('/', [
 // Actualizar estado de turno
 router.put('/:id/status', [
   authenticateToken,
-  body('status').isIn(['pending', 'confirmed', 'completed', 'cancelled']).withMessage('Estado inválido')
+  body('status').isIn(['pending', 'confirmed', 'completed', 'cancelled', 'notavailable']).withMessage('Estado inválido')
 ], AppointmentController.updateStatus);
 
 // Obtener turno por ID

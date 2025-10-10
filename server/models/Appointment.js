@@ -120,7 +120,7 @@ class Appointment {
   static async findOccupiedSlots(date, time, barbershopId) {
     const pool = getPool();
     const [rows] = await pool.execute(
-      `SELECT a.appointment_time, s.duration FROM appointments a JOIN services s ON a.service_id = s.idservices WHERE a.appointment_date = ? AND TIME_FORMAT(a.appointment_time, '%H:%i') = TIME_FORMAT(?, '%H:%i') AND a.barbershop_id = ? AND a.status IN ("pending", "confirmed") LIMIT 1`,
+      `SELECT a.appointment_time, s.duration FROM appointments a JOIN services s ON a.service_id = s.idservices WHERE a.appointment_date = ? AND TIME_FORMAT(a.appointment_time, '%H:%i') = TIME_FORMAT(?, '%H:%i') AND a.barbershop_id = ? AND a.status IN ("pending", "confirmed","notavailable") LIMIT 1`,
       [date, time, barbershopId]
     );
     return rows.length > 0;
@@ -167,6 +167,16 @@ class Appointment {
     return rows[0] || null;
   }
 
+  //Encontrar datos barberia con idbarber desde appointment
+  static async findByidBarber(idBarber) {
+    const pool = getPool();
+    const [rows] = await pool.execute(
+      'SELECT * FROM barbershops WHERE idbarbershops = ? LIMIT 1',
+      [idBarber]
+    );
+    return rows[0] || null;
+  }
+
   //Encontrar si el cliente tiene un turno pendiente 
   static async findByIdClient(IdClient) {
     const pool = getPool();
@@ -183,6 +193,15 @@ class Appointment {
     const [rows] = await pool.execute(
       `SELECT idclients FROM clients WHERE phone = ? LIMIT 1`,
       [botNumberId]
+    );
+    return rows[0] || null;
+  }
+
+  static async findAppointmentById(idappointments) {
+    const pool = getPool();
+    const [rows] = await pool.execute(
+      `SELECT * FROM appointments WHERE idappointments = ? LIMIT 1`,
+      [idappointments]
     );
     return rows[0] || null;
   }
