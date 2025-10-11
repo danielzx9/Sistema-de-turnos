@@ -10,15 +10,21 @@ class AppointmentController {
   static async getAll(req, res) {
     const { date, status, page = 1, limit = 20 } = req.query;
     const filters = {};
+    const barbershopId = req.user?.barbershop_id; // ✅ Usa el valor del token
+
     if (date) filters.date = date;
     if (status) filters.status = status;
-    if (limit) {
-      filters.limit = parseInt(limit);
-      filters.offset = (page - 1) * parseInt(limit);
-    }
+
+    filters.limit = parseInt(limit) || 20;  // valor por defecto si limit no viene
+    filters.offset = ((parseInt(page) || 1) - 1) * filters.limit;
 
     try {
+      if (!barbershopId) {
+        return res.status(400).json({ error: 'No se encontró el ID de la barbería.' });
+      }
+      
       const appointments = await Appointment.findAll(req.user.barbershop_id, filters);
+
       res.json(appointments);
     } catch (error) {
       console.error('Error al obtener turnos:', error);
