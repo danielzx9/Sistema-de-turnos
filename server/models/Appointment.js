@@ -3,6 +3,14 @@ const { getPool } = require('../database/init');
 class Appointment {
   static async findAll(barbershopId, filters = {}) {
     const pool = getPool();
+
+    const {
+      date,
+      status,
+      limit,
+      offset
+    } = filters;
+
     let query = `
       SELECT
         a.idappointments as id,
@@ -44,12 +52,15 @@ class Appointment {
 
     query += ' ORDER BY a.appointment_date DESC, a.appointment_time DESC';
 
-    if (filters.limit) {
-      query += ' LIMIT ?';
-      params.push(filters.limit);
-      if (filters.offset) {
-        query += ' OFFSET ?';
-        params.push(filters.offset);
+
+    if (limit != null && offset != null) {
+      const safeLimit = parseInt(limit, 10);
+      const safeOffset = parseInt(offset, 10);
+
+      // Doble chequeo para asegurarnos que son números válidos
+      if (!isNaN(safeLimit) && !isNaN(safeOffset)) {
+        query += ` LIMIT ${safeLimit} OFFSET ${safeOffset}`;
+        // OJO: NO los agregamos al array `params`
       }
     }
 

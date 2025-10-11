@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Calendar, Clock, User, Phone, Mail, MoreVertical, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
-import { format } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { sendConfirmation, sendCancelled } from '@/lib/api'
 
@@ -182,7 +182,7 @@ export default function AppointmentsList() {
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Gestión de Turnos</h2>
 
-        <div className="flex space-x-4">
+        <div className="flex flex-col md:flex-row md:space-x-4 space-y-2 md:space-y-0">
           <input
             type="date"
             value={filters.date}
@@ -215,7 +215,7 @@ export default function AppointmentsList() {
           {appointments.map((appointment) => (
             <div key={appointment.id} className="card">
               <div className="card-body">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                   <div className="flex-1">
                     <div className="flex items-center space-x-4 mb-2">
                       <div className="flex items-center">
@@ -226,16 +226,19 @@ export default function AppointmentsList() {
                       </div>
                       <div className="flex items-center text-sm text-gray-600">
                         <Calendar className="h-4 w-4 mr-1" />
-                        {format(new Date(appointment.appointment_date), 'dd/MM/yyyy', { locale: es })}
-                      </div>
+                        {(() => {
+                          const [year, month, day] = appointment.appointment_date.split('-').map(Number);
+                          const localDate = new Date(year, month - 1, day); // mes en 0-11
+                          return format(localDate, 'dd/MM/yyyy', { locale: es });
+                        })()}                     </div>
                       <div className="flex items-center text-sm text-gray-600">
                         <Clock className="h-4 w-4 mr-1" />
                         {appointment.appointment_time}
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 min-w-0">
+                      <div className="break-words">
                         <h4 className="font-medium text-gray-900 flex items-center">
                           <User className="h-4 w-4 mr-2" />
                           {appointment.client_name}
@@ -271,7 +274,7 @@ export default function AppointmentsList() {
                     </div>
                   </div>
 
-                  <div className="flex items-center space-x-2">
+                  <div className="flex flex-wrap gap-2">
                     {appointment.status === 'pending' && (
                       <>
                         <button
@@ -346,6 +349,13 @@ export default function AppointmentsList() {
 
                     {appointment.status === 'confirmed' && (
                       <div className="relative">
+                        <button
+                          onClick={() => updateAppointmentStatus(appointment.id, appointment.client_phone, 'completed')}
+                          className="btn-success text-xs px-3 py-1"
+                        >
+                          Completar
+                        </button>
+
                         <button
                           onClick={() => setOpenMenuId(openMenuId === appointment.id ? null : appointment.id)}
                           className="text-gray-400 hover:text-gray-600"
