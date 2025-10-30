@@ -7,24 +7,37 @@ const BotNumberService = require('../services/BotNumberService');
 const moment = require('moment');
 
 class AppointmentController {
+
   static async getAll(req, res) {
+  try {
     const { date, status, page = 1, limit = 20 } = req.query;
-    const filters = {};
-    if (date) filters.date = date;
-    if (status) filters.status = status;
-    if (limit) {
-      filters.limit = parseInt(limit);
-      filters.offset = (page - 1) * parseInt(limit);
+    const barbershopId = req.user?.barbershop_id;
+
+    if (!barbershopId) {
+      return res.status(400).json({ error: 'No se encontró el ID de la barbería.' });
     }
 
-    try {
-      const appointments = await Appointment.findAll(req.user.barbershop_id, filters);
-      res.json(appointments);
-    } catch (error) {
-      console.error('Error al obtener turnos:', error);
-      res.status(500).json({ error: 'Error al obtener turnos' });
-    }
+    const filters = {};
+
+    if (date) filters.date = date;
+    if (status) filters.status = status;
+
+    // Garantizamos que limit y offset sean siempre números válidos
+    const safeLimit = Number(limit) || 20;
+    const safePage = Number(page) || 1;
+    const safeOffset = (safePage - 1) * safeLimit;
+
+    filters.limit = safeLimit;
+    filters.offset = safeOffset;
+
+    const appointments = await Appointment.findAll(barbershopId, filters);
+    res.json(appointments);
+  } catch (error) {
+    console.error('Error al obtener turnos:', error);
+    res.status(500).json({ error: 'Error al obtener turnos' });
   }
+}
+
 
   static async getAvailableSlots(req, res) {
     const botNumber = BotNumberService.getBotNumber();
