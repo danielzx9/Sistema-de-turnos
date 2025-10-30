@@ -1,0 +1,35 @@
+# Etapa 1: construir la aplicación
+FROM node:18 AS builder
+
+# Crear directorio de trabajo
+WORKDIR /app
+
+# Copiar archivos de dependencias
+COPY package*.json ./
+
+# Instalar todas las dependencias (incluyendo devDependencies)
+RUN npm install
+
+# Copiar el resto del código fuente
+COPY . .
+
+# Compilar la app Next.js
+RUN chmod +x node_modules/.bin/next
+RUN npm run build
+
+# Etapa 2: ejecutar la aplicación
+FROM node:18-alpine AS runner
+
+WORKDIR /app
+
+# Copiar solo lo necesario desde la etapa anterior
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+
+ENV NODE_ENV=production
+# Exponer el puerto
+EXPOSE 3000
+
+# Comando para iniciar Next.js en producción
+CMD ["npm", "start"]
