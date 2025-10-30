@@ -17,17 +17,12 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware de seguridad
 app.use(helmet());
-app.use(
-  cors({
-    origin: [
-      'https://dajo-system.lat', // Tu dominio del frontend
-      'https://www.dajo-system.lat', // Por si usas el www
-    ],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true,
-  })
-);
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+     ? ['https://tu-dominio.com'] 
+    : ['http://localhost:3000'],
+  credentials: true
+}));
 
 // Rate limiting
 const limiter = rateLimit({
@@ -77,7 +72,7 @@ async function startServer() {
   try {
     console.log('✅ Base de datos inicializada correctamente');
     
-    app.listen(PORT, '0.0.0.0', () => {
+    app.listen(PORT, () => {
       console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
       console.log(`📱 API disponible en http://localhost:${PORT}/api`);
       console.log(`🏥 Sistema de turnos listo para usar!`);

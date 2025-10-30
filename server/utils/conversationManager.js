@@ -215,10 +215,8 @@ class ConversationManager {
         "sabado": 6
       };
 
-      const now = new Date();
-      const today = new Date(now.toLocaleString("en-US", { timeZone: "America/Bogota" }));
-
-      const todayDay = today.getDay();
+      const today = new Date();
+      const todayDay = today.getDay(); // 0-6
       let selectedDate = new Date(today);
       let diff = 0;
 
@@ -230,7 +228,7 @@ class ConversationManager {
       } else {
         const targetDay = diasSemana[diaTexto];
         diff = targetDay - todayDay;
-        if (diff < 0) diff += 7;
+        if (diff < 0) diff += 7; // siguiente semana si ya pasó el día
         selectedDate.setDate(today.getDate() + diff);
       }
 
@@ -311,10 +309,7 @@ class ConversationManager {
       // ------------------------------------------------------------
       // 6. Validar disponibilidad del turno
       // ------------------------------------------------------------
-      const year = selectedDate.getFullYear();
-      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-      const day = String(selectedDate.getDate()).padStart(2, '0');
-      const dateStr = `${year}-${month}-${day}`;
+      const dateStr = selectedDate.toISOString().split("T")[0];
       const timeStr = horaTexto;
 
       const isAvailable = await AppointmentController.isSlotAvailable(dateStr, timeStr, idbarbershops);

@@ -8,7 +8,7 @@ const Admin = require('../models/Admin')
 
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v18.0';
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID.split(',');
+const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 
 class WhatsAppController {
   static webhookGet(req, res) {
@@ -94,18 +94,10 @@ class WhatsAppController {
     }
   }
 
-  static async getPhoneNumberId(barbershopId) {
-    // Simple: mapear barbería 1 al primer número, barbería 2 al segundo, etc.
-    return PHONE_NUMBER_ID[barbershopId - 1];
-  }
 
   static async sendConfirmation(req, res) {
-
     console.log('📨 Llamada a sendConfirmation:', req.body);
     const { appointmentId, phoneNumber } = req.body;
-
-    const barberId = await Appointment.findAppointmentById(appointmentId);
-
 
     if (!appointmentId || !phoneNumber) {
       return res.status(400).json({ error: 'ID de turno y número de teléfono son requeridos' });
@@ -117,8 +109,8 @@ class WhatsAppController {
         return res.status(404).json({ error: 'Turno no encontrado' });
       }
 
-      const messageString = await generateConfirmationMessage(appointment);
-      await sendWhatsAppMessage(phoneNumber, messageString, barberId.barbershop_id);
+      const message = generateConfirmationMessage(appointment);
+      await sendWhatsAppMessage(phoneNumber, message);
 
       res.json({ message: 'Mensaje de confirmación enviado exitosamente' });
     } catch (error) {
@@ -131,8 +123,6 @@ class WhatsAppController {
     console.log('📨 Llamada a sendCancelled:', req.body);
     const { appointmentId, phoneNumber } = req.body;
 
-    const barberId = await Appointment.findAppointmentById(appointmentId);
-
     if (!appointmentId || !phoneNumber) {
       return res.status(400).json({ error: 'ID de turno y número de teléfono son requeridos' });
     }
@@ -143,8 +133,8 @@ class WhatsAppController {
         return res.status(404).json({ error: 'Turno no encontrado' });
       }
 
-      const message = await generateCancelledMessage(appointment);
-      await sendWhatsAppMessage(phoneNumber, message, barberId.barbershop_id);
+      const message = generateCancelledMessage(appointment);
+      await sendWhatsAppMessage(phoneNumber, message);
 
       res.json({ message: 'Mensaje de confirmación enviado exitosamente' });
     } catch (error) {
@@ -172,7 +162,7 @@ class WhatsAppController {
   
   Ejemplo:
   • CANCELAR 1  
-  • CANCELAR 2`, idbarbershops);
+  • CANCELAR 2`);
         return;
       }
 
@@ -184,7 +174,7 @@ class WhatsAppController {
       const appointments = await Appointment.findByPhone(phoneNumber, idbarbershops);
 
       if (appointments.length === 0) {
-        await sendWhatsAppMessage(phoneNumber, `❌ *No tienes turnos activos para cancelar.*`,idbarbershops);
+        await sendWhatsAppMessage(phoneNumber, `❌ *No tienes turnos activos para cancelar.*`);
         return;
       }
 
@@ -205,7 +195,7 @@ class WhatsAppController {
         });
         msg += `\nPor favor indica el número del turno a cancelar.\nEjemplo: CANCELAR 1`;
 
-        await sendWhatsAppMessage(phoneNumber, msg,idbarbershops);
+        await sendWhatsAppMessage(phoneNumber, msg);
         return;
       }
 
@@ -216,7 +206,7 @@ class WhatsAppController {
       const deleted = await Appointment.delete(selectedAppointment.id, idbarbershops);
 
       if (!deleted) {
-        await sendWhatsAppMessage(phoneNumber, `⚠️ No se pudo cancelar el turno seleccionado.`,idbarbershops);
+        await sendWhatsAppMessage(phoneNumber, `⚠️ No se pudo cancelar el turno seleccionado.`);
         return;
       }
 
@@ -241,17 +231,15 @@ class WhatsAppController {
   
   Puedes escribir *RESERVAR* si deseas agendar un nuevo turno.`;
 
-      await sendWhatsAppMessage(phoneNumber, cancelMsg,idbarbershops);
+      await sendWhatsAppMessage(phoneNumber, cancelMsg);
     } catch (error) {
       console.error('Error al cancelar turno:', error);
-      await sendWhatsAppMessage(phoneNumber, `⚠️ Error al cancelar el turno. Por favor intenta nuevamente o contáctanos.`,idbarbershops);
+      await sendWhatsAppMessage(phoneNumber, `⚠️ Error al cancelar el turno. Por favor intenta nuevamente o contáctanos.`);
     }
   }
 
   static async sendReminder(req, res) {
     const { appointmentId, phoneNumber } = req.body;
-
-    const barberId = await Appointment.findAppointmentById(appointmentId);
 
     if (!appointmentId || !phoneNumber) {
       return res.status(400).json({ error: 'ID de turno y número de teléfono son requeridos' });
@@ -264,7 +252,7 @@ class WhatsAppController {
       }
 
       const message = generateReminderMessage(appointment);
-      await sendWhatsAppMessage(phoneNumber, message, barberId.barbershop_id);
+      await sendWhatsAppMessage(phoneNumber, message);
 
       res.json({ message: 'Recordatorio enviado exitosamente' });
     } catch (error) {
@@ -289,15 +277,13 @@ async function processIncomingMessage(message, botNumberId) {
 
   const conversationState = conversationManager.getConversationState(phoneNumber);
 
-  const barberId = await Appointment.findBybotNumber(botNumberId);
-
   if (conversationState && !conversationManager.isConversationExpired(phoneNumber)) {
     const response = await conversationManager.processUserResponse(phoneNumber, messageText, botNumberId);
 
     if (response.action === 'send_message') {
-      await sendWhatsAppMessage(phoneNumber, response.message, barberId.idbarbershops);
+      await sendWhatsAppMessage(phoneNumber, response.message);
     } else if (response.action === 'restart') {
-      await sendWhatsAppMessage(phoneNumber, response.message, barberId.idbarbershops);
+      await sendWhatsAppMessage(phoneNumber, response.message);
     }
     if (response.action === 'call_cancel') {
       // obtenemos idbarbershops igual que en el resto del flujo
@@ -326,7 +312,7 @@ async function processIncomingMessage(message, botNumberId) {
     const appointments = await Appointment.findByPhone(phoneNumber, idbarbershops);
 
     if (appointments.length === 0) {
-      await sendWhatsAppMessage(phoneNumber, `❌ *No tienes turnos activos para cancelar.*`,idbarbershops);
+      await sendWhatsAppMessage(phoneNumber, `❌ *No tienes turnos activos para cancelar.*`);
       return;
     }
 
@@ -353,7 +339,7 @@ async function processIncomingMessage(message, botNumberId) {
     });
     msg += `Por favor indica el número del turno que deseas cancelar.\n\n👉 Ejemplo: *CANCELAR 1*`;
 
-    await sendWhatsAppMessage(phoneNumber, msg, idbarbershops);
+    await sendWhatsAppMessage(phoneNumber, msg);
     return;
 
 
@@ -373,7 +359,7 @@ async function processIncomingMessage(message, botNumberId) {
       const hasPending = await conversationManager.checkExistingAppointment(idClient);
 
       if (hasPending) {
-        await sendWhatsAppMessage(phoneNumber, '⚠️ Ya tienes un turno pendiente. Por favor cancélalo o espera a que termine antes de pedir otro.', idbarbershops);
+        await sendWhatsAppMessage(phoneNumber, '⚠️ Ya tienes un turno pendiente. Por favor cancélalo o espera a que termine antes de pedir otro.');
         return;
       }
     }
@@ -387,10 +373,7 @@ async function processIncomingMessage(message, botNumberId) {
 
 
 
-async function sendWhatsAppMessage(phoneNumber, message, barbershopId) {
-
-  const PHONE_NUMBER_ID = await WhatsAppController.getPhoneNumberId(barbershopId);
-
+async function sendWhatsAppMessage(phoneNumber, message) {
   if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
     console.log('⚠️ Configuración de WhatsApp no disponible');
     return;
@@ -403,7 +386,7 @@ async function sendWhatsAppMessage(phoneNumber, message, barbershopId) {
         messaging_product: 'whatsapp',
         to: phoneNumber,
         type: 'text',
-        text: { body: String(message) }
+        text: { body: message }
       },
       {
         headers: {
@@ -522,7 +505,7 @@ async function sendWelcomeMessage(phoneNumber) {
 
 ¡Estamos aquí para ayudarte! 😊`;
 
-  await sendWhatsAppMessage(phoneNumber, message, barbershops.idbarbershops);
+  await sendWhatsAppMessage(phoneNumber, message);
 }
 
 async function sendMyAppointment(phoneNumber, idbarbershops) {
@@ -535,63 +518,17 @@ async function sendMyAppointment(phoneNumber, idbarbershops) {
 No encontramos turnos pendientes o confirmados para tu número.
 
 Para reservar un turno:
-• Escribe "RESERVAR" para instrucciones`, idbarbershops);
+• Escribe "RESERVAR" para instrucciones`);
     } else {
-      
-	 let message = `📅 *Tus Turnos Activos*\n\n`;
-
-    appointments.forEach((apt, index) => {
-      // --- FECHA ---
-      let dateStr = '';
-      if (apt.appointment_date instanceof Date) {
-        // Si viene como objeto Date, formateamos manualmente
-        const year = apt.appointment_date.getFullYear();
-        const month = String(apt.appointment_date.getMonth() + 1).padStart(2, '0');
-        const day = String(apt.appointment_date.getDate()).padStart(2, '0');
-        dateStr = `${day}/${month}/${year}`;
-      } else {
-        // Si viene como string
-        const dateValue = String(apt.appointment_date);
-        if (dateValue.includes('-')) {
-          const [year, month, day] = dateValue.slice(0, 10).split('-');
-          dateStr = `${day}/${month}/${year}`;
-        } else {
-          dateStr = dateValue;
-        }
-      }
-
-	
-	// --- HORA ---
-      let timeStr = '';
-      if (apt.appointment_time instanceof Date) {
-        // Si viene como Date, tomamos solo HH:mm locales
-        const hours = String(apt.appointment_time.getHours()).padStart(2, '0');
-        const minutes = String(apt.appointment_time.getMinutes()).padStart(2, '0');
-        timeStr = `${hours}:${minutes}`;
-      } else {
-        const rawTime = String(apt.appointment_time);
-        // Si viene tipo "2025-10-20 14:00:00"
-        if (rawTime.includes(' ')) {
-          const timePart = rawTime.split(' ')[1];
-          const [hours, minutes] = timePart.split(':');
-          timeStr = `${hours}:${minutes}`;
-        }
-// Si viene tipo "2025-10-20T14:00:00.000Z"
-        else if (rawTime.includes('T')) {
-          const timePart = rawTime.split('T')[1];
-          const [hours, minutes] = timePart.split(':');
-          timeStr = `${hours}:${minutes}`;
-        }
-        // Si viene solo "14:00:00"
-        else if (rawTime.includes(':')) {
-          const [hours, minutes] = rawTime.split(':');
-          timeStr = `${hours}:${minutes}`;
-        } else {
-          timeStr = rawTime;
-        }
-      }
-
-
+      let message = `📅 *Tus Turnos Activos*\n\n`;
+      appointments.forEach((apt, index) => {
+        const timeStr = new Date(apt.appointment_time)
+          .toLocaleTimeString('es-ES', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+            timeZone: 'America/Bogota'
+          });
         const date = new Date(apt.appointment_date).toLocaleDateString('es-ES');
         message += `${index + 1}. *${apt.service_name}*\n`;
         message += `📅 ${date} a las ${timeStr}\n`;
@@ -600,11 +537,11 @@ Para reservar un turno:
       });
       message += `Para cancelar, escribe "CANCELAR"`;
 
-      await sendWhatsAppMessage(phoneNumber, message, idbarbershops);
+      await sendWhatsAppMessage(phoneNumber, message);
     }
   } catch (error) {
     console.error('Error al obtener turnos:', error);
-    await sendWhatsAppMessage(phoneNumber, '❌ Error al obtener tus turnos. Por favor, contáctanos directamente.', idbarbershops);
+    await sendWhatsAppMessage(phoneNumber, '❌ Error al obtener tus turnos. Por favor, contáctanos directamente.');
   }
 }
 
@@ -617,10 +554,10 @@ async function sendReservationStart(phoneNumber, idbarbershops) {
     });
     serviceList += '\n*Escribe el número del servicio que deseas:*\n\n*Ejemplo:* 1, 2, 3...';
 
-    await sendWhatsAppMessage(phoneNumber, serviceList, idbarbershops);
+    await sendWhatsAppMessage(phoneNumber, serviceList);
   } catch (error) {
     console.error('Error al iniciar reserva:', error);
-    await sendWhatsAppMessage(phoneNumber, '❌ Error al iniciar la reserva. Por favor, contáctanos directamente.', idbarbershops);
+    await sendWhatsAppMessage(phoneNumber, '❌ Error al iniciar la reserva. Por favor, contáctanos directamente.');
   }
 }
 
