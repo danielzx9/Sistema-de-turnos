@@ -124,14 +124,7 @@ export default function AdminLogin({ onLogin }: AdminLoginProps) {
             </button>
           </div>
           
-          <div className="text-center">
-            <p className="text-sm text-gray-600">
-              Credenciales por defecto: <br />
-              <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
-                admin / admin123
-              </span>
-            </p>
-          </div>
+          
         </form>
       </div>
     </div>
