@@ -15,7 +15,7 @@ Un sistema completo para gestión de turnos y reservas para barberías, clínica
 
 ### Backend
 - Node.js + Express
-- SQLite (desarrollo) / PostgreSQL (producción)
+- MySQL 
 - JWT para autenticación
 - WhatsApp Business API
 
