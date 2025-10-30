@@ -537,60 +537,8 @@ No encontramos turnos pendientes o confirmados para tu número.
 Para reservar un turno:
 • Escribe "RESERVAR" para instrucciones`, idbarbershops);
     } else {
+
       
-	 let message = `📅 *Tus Turnos Activos*\n\n`;
-
-    appointments.forEach((apt, index) => {
-      // --- FECHA ---
-      let dateStr = '';
-      if (apt.appointment_date instanceof Date) {
-        // Si viene como objeto Date, formateamos manualmente
-        const year = apt.appointment_date.getFullYear();
-        const month = String(apt.appointment_date.getMonth() + 1).padStart(2, '0');
-        const day = String(apt.appointment_date.getDate()).padStart(2, '0');
-        dateStr = `${day}/${month}/${year}`;
-      } else {
-        // Si viene como string
-        const dateValue = String(apt.appointment_date);
-        if (dateValue.includes('-')) {
-          const [year, month, day] = dateValue.slice(0, 10).split('-');
-          dateStr = `${day}/${month}/${year}`;
-        } else {
-          dateStr = dateValue;
-        }
-      }
-
-	
-	// --- HORA ---
-      let timeStr = '';
-      if (apt.appointment_time instanceof Date) {
-        // Si viene como Date, tomamos solo HH:mm locales
-        const hours = String(apt.appointment_time.getHours()).padStart(2, '0');
-        const minutes = String(apt.appointment_time.getMinutes()).padStart(2, '0');
-        timeStr = `${hours}:${minutes}`;
-      } else {
-        const rawTime = String(apt.appointment_time);
-        // Si viene tipo "2025-10-20 14:00:00"
-        if (rawTime.includes(' ')) {
-          const timePart = rawTime.split(' ')[1];
-          const [hours, minutes] = timePart.split(':');
-          timeStr = `${hours}:${minutes}`;
-        }
-// Si viene tipo "2025-10-20T14:00:00.000Z"
-        else if (rawTime.includes('T')) {
-          const timePart = rawTime.split('T')[1];
-          const [hours, minutes] = timePart.split(':');
-          timeStr = `${hours}:${minutes}`;
-        }
-        // Si viene solo "14:00:00"
-        else if (rawTime.includes(':')) {
-          const [hours, minutes] = rawTime.split(':');
-          timeStr = `${hours}:${minutes}`;
-        } else {
-          timeStr = rawTime;
-        }
-      }
-
 
         const date = new Date(apt.appointment_date).toLocaleDateString('es-ES');
         message += `${index + 1}. *${apt.service_name}*\n`;
